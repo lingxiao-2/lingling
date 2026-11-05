@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import type { CSSProperties } from 'react'
 import { applyThemeVars, themeVars, useThemeSettings, type ThemeSettings, type WallpaperSetting } from '../theme/theme'
 import { applyCustomIcons } from '../theme/icons'
+import { windowSceneBackground } from '../assets/winter/windowScene'
 
 /**
  * 原创的默认雪景壁纸（程序生成，不使用任何外部素材）：
@@ -49,11 +50,13 @@ ${snow}${stars}</svg>`
 
 let cachedScene: string | null = null
 
-export function wallpaperStyle(w: WallpaperSetting): CSSProperties {
+/** variant = chat 时，默认壁纸使用「冬日窗景」；列表页使用更淡的雪景 */
+export function wallpaperStyle(w: WallpaperSetting, variant: 'list' | 'chat' = 'list'): CSSProperties {
   if (w.kind === 'image' && w.image) {
     return { backgroundImage: `url("${w.image}")`, backgroundSize: 'cover', backgroundPosition: 'center' }
   }
   if (w.kind === 'color') return { background: w.color || 'var(--c-bg)' }
+  if (variant === 'chat') return { backgroundImage: windowSceneBackground(), backgroundSize: 'cover', backgroundPosition: 'center' }
   cachedScene ??= defaultScene()
   return { backgroundImage: cachedScene, backgroundSize: 'cover', backgroundPosition: 'center bottom' }
 }
@@ -88,7 +91,7 @@ export function chatWallpaperOf(t: ThemeSettings): WallpaperSetting {
  */
 export function ChatWallpaper() {
   const theme = useThemeSettings()
-  const style = useMemo(() => wallpaperStyle(chatWallpaperOf(theme)), [theme])
+  const style = useMemo(() => wallpaperStyle(chatWallpaperOf(theme), 'chat'), [theme])
   return (
     <div aria-hidden="true" className="fixed inset-0 -z-[5] pointer-events-none" style={style}>
       <div className="absolute inset-0" style={{ background: 'var(--veil-chat)' }} />

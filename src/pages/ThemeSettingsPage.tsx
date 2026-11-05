@@ -83,11 +83,13 @@ function WallpaperPicker({
   value,
   inherit,
   inheritStyle,
+  variant = 'list',
   onChange,
 }: {
   value: WallpaperSetting | { kind: 'inherit' }
   inherit?: boolean
   inheritStyle?: CSSProperties
+  variant?: 'list' | 'chat'
   onChange: (v: WallpaperSetting | { kind: 'inherit' }) => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -115,7 +117,12 @@ function WallpaperPicker({
             <span className="text-[10px] text-[var(--c-text-2)] bg-white/60 rounded-full px-1.5">同步</span>
           </Swatch>
         )}
-        <Swatch label="默认雪景" active={value.kind === 'default'} style={wallpaperStyle({ kind: 'default' })} onClick={() => onChange({ kind: 'default' })} />
+        <Swatch
+          label={variant === 'chat' ? '冬日窗景' : '默认雪景'}
+          active={value.kind === 'default'}
+          style={wallpaperStyle({ kind: 'default' }, variant)}
+          onClick={() => onChange({ kind: 'default' })}
+        />
         <Swatch
           label={busy ? '处理中…' : image ? '我的图片' : '上传图片'}
           active={value.kind === 'image'}
@@ -250,7 +257,7 @@ export default function ThemeSettingsPage() {
         {/* 实时预览：使用聊天壁纸 + 当前气泡设置 */}
         <div
           className="mx-4 rounded-[var(--radius-lg)] overflow-hidden border border-white/70 shadow-[var(--shadow-soft)]"
-          style={wallpaperStyle(chatWallpaperOf(theme))}
+          style={wallpaperStyle(chatWallpaperOf(theme), 'chat')}
         >
           <div className="px-3.5 py-5 space-y-4" style={{ background: 'var(--veil-chat)' }}>
             {bubblePreview(false, '今天窗外下雪了。')}
@@ -278,11 +285,20 @@ export default function ThemeSettingsPage() {
             </div>
           </div>
           <Slider
+            label="头像"
+            value={theme.chatText.avatar ?? 28}
+            min={24}
+            max={34}
+            step={1}
+            format={(v) => `${v}px`}
+            onChange={(v) => save({ chatText: { ...theme.chatText, avatar: v } })}
+          />
+          <Slider
             label="字号"
             value={theme.chatText.size}
             min={13}
             max={20}
-            step={1}
+            step={0.5}
             format={(v) => `${v}px`}
             onChange={(v) => save({ chatText: { ...theme.chatText, size: v } })}
           />
@@ -295,7 +311,8 @@ export default function ThemeSettingsPage() {
         <WallpaperPicker
           value={theme.chatWallpaper}
           inherit
-          inheritStyle={wallpaperStyle(theme.wallpaper)}
+          variant="chat"
+          inheritStyle={wallpaperStyle(theme.wallpaper, 'chat')}
           onChange={(v) => save({ chatWallpaper: v })}
         />
 
@@ -306,7 +323,7 @@ export default function ThemeSettingsPage() {
           <Slider label="透明度" value={b.opacity} min={0.3} max={0.95} step={0.01} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => setBubble({ opacity: v })} />
           <Slider label="细边框" value={b.border} min={0} max={1} step={0.05} format={(v) => (v === 0 ? '无' : `${Math.round(v * 100)}%`)} onChange={(v) => setBubble({ border: v })} />
           <label className="flex items-center justify-between px-4 py-2.5 text-[13px] text-[var(--c-text-2)]">
-            雪花点缀
+            冬日装饰（雪花、丝带、落款）
             <input type="checkbox" checked={b.ornament} onChange={(e) => setBubble({ ornament: e.target.checked })} className="accent-[var(--c-accent)]" />
           </label>
           <div className="flex justify-end px-4 pb-1.5">
