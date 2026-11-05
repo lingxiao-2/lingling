@@ -4,12 +4,12 @@ import NavBar from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import { PrimaryButton, Section, TextField } from '../components/ui'
 import { setSetting } from '../db/db'
-import { useProfile } from '../store/profile'
+import { useProfileLoaded } from '../store/profile'
 import { imageToAvatar } from '../lib/util'
 
 export default function ProfileEditPage() {
   const nav = useNavigate()
-  const profile = useProfile()
+  const profile = useProfileLoaded()
   const [nickname, setNickname] = useState('')
   const [signature, setSignature] = useState('')
   const [avatar, setAvatar] = useState<string | undefined>()
@@ -17,7 +17,7 @@ export default function ProfileEditPage() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (loaded.current) return
+    if (loaded.current || !profile) return
     loaded.current = true
     setNickname(profile.nickname)
     setSignature(profile.signature)
@@ -34,7 +34,9 @@ export default function ProfileEditPage() {
   }
 
   const save = async () => {
-    await setSetting('profile', { nickname: nickname.trim() || '我', signature: signature.trim(), avatar })
+    if (!profile) return
+    await setSetting('profile', {
+      ...profile, nickname: nickname.trim() || '我', signature: signature.trim(), avatar })
     nav(-1)
   }
 
