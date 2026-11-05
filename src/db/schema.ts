@@ -45,6 +45,13 @@ export interface Character {
   greeting?: string
   /** 示例对话（V2 起）。只是角色设定，不写入聊天记录，也不进入记忆 */
   exampleDialogue?: string
+  /**
+   * 长篇人设文档中无法归入固定字段的章节（原文完整保留）。
+   * 不会每次都整段发给模型：按与当前聊天的相关程度挑选，见 services/ai/profile.ts
+   */
+  profileExtras?: { label: string; text: string }[]
+  /** 从文档导入时提取出的全文（供核对和以后重新整理；不直接发送给模型） */
+  sourceDoc?: { fileName: string; text: string; chars: number; paragraphs?: number }
   /** 聊天表达偏好（可选） */
   chatStyle?: ChatStyle
   /** 导入时无法映射的原始字段，原样保留（V2 起） */

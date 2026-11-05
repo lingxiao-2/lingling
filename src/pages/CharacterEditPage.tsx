@@ -94,6 +94,9 @@ export default function CharacterEditPage() {
         relationToUser: d.relationToUser || cur.relationToUser,
         greeting: d.greeting || cur.greeting,
         exampleDialogue: d.exampleDialogue || cur.exampleDialogue,
+        // 长篇文档中无法归入固定字段的章节与全文一并保留
+        profileExtras: d.extras?.length ? d.extras : cur.profileExtras,
+        sourceDoc: f.doc ? { fileName: f.fileName, text: f.doc.text.slice(0, 300_000), chars: f.doc.text.replace(/\s/g, '').length, paragraphs: f.doc.paragraphs } : cur.sourceDoc,
       }))
     },
   )
@@ -114,6 +117,8 @@ export default function CharacterEditPage() {
       exampleDialogue: existing.exampleDialogue ?? '',
       worldId: existing.worldId,
       chatStyle: existing.chatStyle,
+      profileExtras: existing.profileExtras,
+      sourceDoc: existing.sourceDoc,
     })
   }, [existing])
 

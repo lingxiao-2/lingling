@@ -7,7 +7,7 @@ import { ConfirmDialog } from '../components/Sheet'
 import PickerSheet from '../components/PickerSheet'
 import { PrimaryButton, Section } from '../components/ui'
 import { db } from '../db/db'
-import { deleteCharacter, getOrCreateSingleConversation, linkLorebook, unlinkLorebook } from '../db/repo'
+import { characterTextChars, deleteCharacter, getOrCreateSingleConversation, linkLorebook, unlinkLorebook } from '../db/repo'
 import { DEFAULT_WORLD_ID } from '../db/schema'
 import type { Lorebook } from '../db/schema'
 import { FORMAT_LABELS, type ImportFormat } from '../import/types'
@@ -91,6 +91,22 @@ export default function CharacterProfilePage() {
           <Block label="说话风格" text={c.speakingStyle} />
           <Block label="背景故事" text={c.backstory} />
         </Section>
+
+        {(c.profileExtras?.length ?? 0) > 0 && (
+          <Section title="其他设定（导入时无法归类，原文保留）">
+            {c.profileExtras!.map((e, i) => (
+              <Block key={i} label={e.label} text={e.text} />
+            ))}
+          </Section>
+        )}
+
+        {c.sourceDoc && (
+          <div className="mx-6 mt-3 text-[11.5px] leading-relaxed text-[var(--c-text-3)]">
+            导入自「{c.sourceDoc.fileName}」：原文 {c.sourceDoc.chars.toLocaleString()} 字
+            {c.sourceDoc.paragraphs ? `、${c.sourceDoc.paragraphs} 段` : ''}，全文保存在本机。
+            当前资料共 {characterTextChars(c).toLocaleString()} 字；聊天时核心设定每次发送，较长的部分按话题挑选相关段落发送。
+          </div>
+        )}
 
         {(c.greeting || c.exampleDialogue) && (
           <Section title="开场白与示例对话（仅作设定，不是聊天记录）">
