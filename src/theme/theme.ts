@@ -28,6 +28,24 @@ export interface BubbleStyle {
   ornament: boolean
 }
 
+export type ChatFont = 'sans' | 'serif' | 'kai'
+
+export interface ChatTextStyle {
+  font: ChatFont
+  /** 聊天文字大小（px） */
+  size: number
+}
+
+/** 聊天字体：优先使用 iPhone 自带字体，末尾附表情符号字体，保证中英文与 emoji 都能显示 */
+const EMOJI = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"'
+export const CHAT_FONTS: Record<ChatFont, { label: string; stack: string }> = {
+  sans: { label: '苹方', stack: `-apple-system, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif, ${EMOJI}` },
+  serif: { label: '宋体', stack: `"Songti SC", "Noto Serif SC", "Source Han Serif SC", "Noto Serif CJK SC", serif, ${EMOJI}` },
+  kai: { label: '楷体', stack: `"Kaiti SC", "STKaiti", "KaiTi", "BiauKai", "Songti SC", serif, ${EMOJI}` },
+}
+
+export const DEFAULT_CHAT_TEXT: ChatTextStyle = { font: 'sans', size: 15 }
+
 export interface ThemeSettings {
   themeId: 'winter-letter'
   /** 应用（列表页）壁纸 */
@@ -35,6 +53,7 @@ export interface ThemeSettings {
   /** 聊天壁纸：跟随应用壁纸，或单独设置 */
   chatWallpaper: { kind: 'inherit' } | WallpaperSetting
   bubble: BubbleStyle
+  chatText: ChatTextStyle
   /** 预留：自定义图标图片（图标名 → 图片 dataURL），后续版本开放 */
   customIcons?: Record<string, string>
   /** 预留：自定义字体（CSS font-family），后续版本开放 */
@@ -56,6 +75,7 @@ export const DEFAULT_THEME: ThemeSettings = {
   wallpaper: { kind: 'default' },
   chatWallpaper: { kind: 'inherit' },
   bubble: DEFAULT_BUBBLE,
+  chatText: DEFAULT_CHAT_TEXT,
 }
 
 /** 气泡预设颜色（冰蓝色系为主） */
@@ -67,7 +87,12 @@ export function useThemeSettings(): ThemeSettings {
   return useLiveQuery(
     async () => {
       const saved = ((await db.settings.get('theme'))?.value as Partial<ThemeSettings>) ?? {}
-      return { ...DEFAULT_THEME, ...saved, bubble: { ...DEFAULT_BUBBLE, ...(saved.bubble ?? {}) } }
+      return {
+        ...DEFAULT_THEME,
+        ...saved,
+        bubble: { ...DEFAULT_BUBBLE, ...(saved.bubble ?? {}) },
+        chatText: { ...DEFAULT_CHAT_TEXT, ...(saved.chatText ?? {}) },
+      }
     },
     [],
     DEFAULT_THEME,
@@ -92,6 +117,8 @@ export function themeVars(t: ThemeSettings): Record<string, string> {
     '--c-bubble-them': rgba(b.them, b.opacity),
     '--c-bubble-me': rgba(b.me, b.opacity),
     '--bubble-border': `rgba(255, 255, 255, ${b.border.toFixed(2)})`,
+    '--chat-font': (CHAT_FONTS[t.chatText.font] ?? CHAT_FONTS.sans).stack,
+    '--chat-font-size': `${Math.min(20, Math.max(13, t.chatText.size))}px`,
   }
   if (t.fonts?.body) vars['--font-sans'] = t.fonts.body
   if (t.fonts?.serifZh) vars['--font-serif-zh'] = t.fonts.serifZh
@@ -101,6 +128,12 @@ export function themeVars(t: ThemeSettings): Record<string, string> {
 
 export async function saveThemeSettings(next: ThemeSettings): Promise<void> {
   await setSetting('theme', next)
+}
+
+/** 只修改部分设置：先读取已保存的最新值再合并，避免页面尚未读完时用默认值覆盖用户的壁纸等设置 */
+export async function updateThemeSettings(patch: Partial<ThemeSettings>): Promise<void> {
+  const saved = ((await db.settings.get('theme'))?.value as Partial<ThemeSettings>) ?? {}
+  await setSetting('theme', { ...DEFAULT_THEME, ...saved, ...patch })
 }
 
 /** 把主题变量写到 :root */

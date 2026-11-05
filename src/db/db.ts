@@ -6,8 +6,11 @@ export const db = new LinglingDB()
 export const DEFAULT_PROFILE: UserProfile = { nickname: '我', signature: '' }
 
 export const DEFAULT_AI_CONFIG: AIConfig = {
+  mode: 'direct',
   baseUrl: 'https://api.deepseek.com/v1',
   apiKey: '',
+  proxyUrl: '',
+  proxyToken: '',
   model: 'deepseek-chat',
   temperature: 0.8,
   maxTokens: 1024,

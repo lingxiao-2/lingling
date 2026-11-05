@@ -7,11 +7,13 @@ import { chatWallpaperOf, wallpaperStyle } from '../components/Wallpaper'
 import { GhostButton, Row, Section, SectionTitle } from '../components/ui'
 import { Icon } from '../theme/icons'
 import {
+  CHAT_FONTS,
+  type ChatFont,
   BUBBLE_COLORS,
   DEFAULT_BUBBLE,
   WALLPAPER_COLORS,
   rgba,
-  saveThemeSettings,
+  updateThemeSettings,
   useThemeSettings,
   type BubbleStyle,
   type ThemeSettings,
@@ -219,7 +221,7 @@ export default function ThemeSettingsPage() {
   const nav = useNavigate()
   const theme = useThemeSettings()
   const profile = useProfile()
-  const save = (patch: Partial<ThemeSettings>) => void saveThemeSettings({ ...theme, ...patch })
+  const save = (patch: Partial<ThemeSettings>) => void updateThemeSettings(patch)
   const setBubble = (p: Partial<BubbleStyle>) => save({ bubble: { ...theme.bubble, ...p } })
   const b = theme.bubble
 
@@ -254,6 +256,39 @@ export default function ThemeSettingsPage() {
             {bubblePreview(false, '今天窗外下雪了。')}
             {bubblePreview(true, '那你要牵好我的手哦')}
           </div>
+        </div>
+
+        <div className="px-6 pt-4 pb-2 text-[12px] tracking-wider text-[var(--c-text-2)]">聊天文字</div>
+        <div className="mx-4 card py-1.5">
+          <div className="flex items-center gap-3 px-4 py-2.5">
+            <span className="w-14 shrink-0 text-[13px] text-[var(--c-text-2)]">字体</span>
+            <div className="flex-1 p-0.5 rounded-full bg-[var(--c-bg-2)] border border-[var(--c-line)] grid grid-cols-3">
+              {(Object.keys(CHAT_FONTS) as ChatFont[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => save({ chatText: { ...theme.chatText, font: f } })}
+                  className={`press h-8 rounded-full text-[14px] ${
+                    theme.chatText.font === f ? 'bg-white shadow-[var(--shadow-soft)] text-[var(--c-brand)]' : 'text-[var(--c-text-2)]'
+                  }`}
+                  style={{ fontFamily: CHAT_FONTS[f].stack }}
+                >
+                  {CHAT_FONTS[f].label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Slider
+            label="字号"
+            value={theme.chatText.size}
+            min={13}
+            max={20}
+            step={1}
+            format={(v) => `${v}px`}
+            onChange={(v) => save({ chatText: { ...theme.chatText, size: v } })}
+          />
+          <p className="px-4 pb-2 text-[11px] leading-relaxed text-[var(--c-text-3)]">
+            字体使用 iPhone 自带的中文字体；设备没有楷体时会自动改用宋体。表情符号始终使用系统彩色表情。
+          </p>
         </div>
 
         <div className="px-6 pt-4 pb-2 text-[12px] tracking-wider text-[var(--c-text-2)]">聊天壁纸</div>

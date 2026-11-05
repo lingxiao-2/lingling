@@ -49,6 +49,9 @@
   --bubble-radius: 18px;
   --bubble-pad-y: 10px;
   --bubble-pad-x: 14px;
+  /* 聊天文字：字体与字号由「主题与壁纸」设置写入 */
+  --chat-font-size: 15px;
+  --chat-font: var(--font-sans);
 
   /* —— 壁纸遮罩：列表页更浓，保证可读；聊天页更淡 —— */
   --veil-list: rgba(238, 243, 250, 0.48);
@@ -311,7 +314,8 @@ body {
   padding: var(--bubble-pad-y) var(--bubble-pad-x);
   border-radius: var(--bubble-radius);
   border: 1px solid var(--bubble-border);
-  font-size: 15px;
+  font-family: var(--chat-font);
+  font-size: var(--chat-font-size);
   line-height: 1.65;
   letter-spacing: 0.02em;
   color: var(--c-text);
@@ -336,4 +340,32 @@ body {
   color: #fff;
   text-shadow: 0 0 4px rgba(150, 180, 215, 0.8);
   pointer-events: none;
+}
+
+/* 正在输入：三个轻盈的点 */
+.typing-dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px 2px;
+}
+.typing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--c-accent);
+  opacity: 0.35;
+  animation: typing 1.2s infinite ease-in-out;
+}
+.typing-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes typing {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 0.9; transform: translateY(-2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots i { animation: none; opacity: 0.6; }
 }

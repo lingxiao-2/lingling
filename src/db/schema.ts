@@ -79,6 +79,14 @@ export interface Message {
   deleted?: boolean
   /** 当前生效的回复版本（重新生成功能使用） */
   activeVersionId?: string
+  /** AI 回复：同一次回复拆成的多条消息共享同一个分组 */
+  replyGroupId?: string
+  /** AI 回复：同一位置的多个版本（重新生成）共享同一个家族 ID */
+  versionFamily?: string
+  /** 被重新生成替换的旧版本：保留但隐藏，不进入模型上下文 */
+  superseded?: boolean
+  /** 生成该回复的模型名称 */
+  model?: string
   createdAt: number
   updatedAt: number
 }
@@ -202,8 +210,17 @@ export interface UserProfile {
 
 /** AI 服务配置；API Key 只保存在当前设备的 IndexedDB 中，不进入代码或仓库 */
 export interface AIConfig {
+  /**
+   * direct：个人测试模式，浏览器直接请求服务商，密钥保存在本设备（会随请求发出）
+   * proxy：安全代理模式，请求发给你自己部署的代理，密钥只保存在代理服务器上
+   */
+  mode: 'direct' | 'proxy'
   baseUrl: string
   apiKey: string
+  /** 代理地址，例如 https://lingling-proxy.xxx.workers.dev */
+  proxyUrl: string
+  /** 代理访问口令（不是服务商密钥；用于防止他人滥用你的代理） */
+  proxyToken: string
   model: string
   temperature: number
   maxTokens: number

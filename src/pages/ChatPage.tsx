@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Icon } from '../theme/icons'
@@ -8,12 +9,26 @@ import type { Message } from '../db/schema'
 import NavBar, { NavButton } from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import { ActionSheet } from '../components/Sheet'
-import { useProfile } from '../store/profile'
+import type { SheetAction } from '../components/Sheet'
+import { useAIConfig, useProfile } from '../store/profile'
 import { ChatWallpaper } from '../components/Wallpaper'
 import { useThemeSettings } from '../theme/theme'
 import { DEFAULT_WORLD_ID } from '../db/schema'
 import { formatChatTime } from '../lib/util'
 import { useLongPress } from '../lib/usePress'
+import { configProblem } from '../services/ai/openai'
+import {
+  dismissError,
+  lastReplyGroup,
+  regenerate,
+  runReply,
+  scheduleReply,
+  setViewing,
+  stopReply,
+  switchVersion,
+  useReplyState,
+  versionInfo,
+} from '../services/ai/replyEngine'
 
 const GAP_MS = 5 * 60 * 1000
 const BOTTOM_THRESHOLD = 80
@@ -37,42 +52,37 @@ async function copyText(text: string) {
   }
 }
 
-function Bubble({
-  msg,
+/** 一行消息：对方头像在左，自己的头像在右（28px） */
+function Row({
   mine,
   name,
   avatar,
-  ornament,
-  onMenu,
+  showAvatar,
+  children,
 }: {
-  msg: Message
   mine: boolean
   name: string
   avatar?: string
-  ornament: boolean
-  onMenu: () => void
+  showAvatar: boolean
+  children: ReactNode
 }) {
+  return (
+    <div className={`flex items-start gap-2 px-3 ${mine ? 'flex-row-reverse' : ''}`}>
+      <div className="pt-0.5 w-7 shrink-0">{showAvatar && <Avatar name={name} src={avatar} size="chat" />}</div>
+      <div className={`flex flex-col min-w-0 max-w-[72%] ${mine ? 'items-end' : 'items-start'}`}>{children}</div>
+    </div>
+  )
+}
+
+function Bubble({ msg, mine, ornament, onMenu }: { msg: Message; mine: boolean; ornament: boolean; onMenu: () => void }) {
   const press = useLongPress(onMenu)
   return (
-    <div className={`flex items-start gap-2 px-3.5 ${mine ? 'justify-end' : ''}`}>
-      {/* 只为对方显示小头像；自己的消息靠右，保持留白 */}
-      {!mine && (
-        <div className="pt-0.5">
-          <Avatar name={name} src={avatar} size="chat" />
-        </div>
-      )}
-      <div className={`flex flex-col max-w-[74%] ${mine ? 'items-end' : 'items-start'}`}>
-        <div
-          {...press}
-          className={`bubble select-none whitespace-pre-wrap break-words ${mine ? 'bubble-me' : 'bubble-them'} ${
-            ornament ? 'bubble-ornament' : ''
-          }`}
-          style={{ WebkitTouchCallout: 'none' }}
-        >
-          {msg.content}
-        </div>
-        {msg.status === 'failed' && <span className="mt-1 text-[11px] text-[var(--c-danger)]">发送失败</span>}
-      </div>
+    <div
+      {...press}
+      className={`bubble select-none whitespace-pre-wrap break-words ${mine ? 'bubble-me' : 'bubble-them'} ${ornament ? 'bubble-ornament' : ''}`}
+      style={{ WebkitTouchCallout: 'none' }}
+    >
+      {msg.content}
     </div>
   )
 }
@@ -84,6 +94,8 @@ export default function ChatPage() {
   const nav = useNavigate()
   const profile = useProfile()
   const theme = useThemeSettings()
+  const ai = useAIConfig()
+  const reply = useReplyState(convId)
 
   const conv = useLiveQuery(async () => (await db.conversations.get(convId)) ?? null, [convId])
   const charId = conv?.characterIds[0]
@@ -100,7 +112,18 @@ export default function ChatPage() {
     () => db.messages.where('conversationId').equals(convId).sortBy('createdAt'),
     [convId],
   )
-  const visible = useMemo(() => (messages ?? []).filter((m) => !m.deleted), [messages])
+  /** 显示的消息：未删除、当前生效的版本；正在重新生成的那一组暂时隐藏 */
+  const visible = useMemo(
+    () =>
+      (messages ?? []).filter(
+        (m) =>
+          !m.deleted &&
+          !m.superseded &&
+          !(reply.status === 'generating' && reply.regenerating && (m.versionFamily ?? m.replyGroupId) === reply.regenerating),
+      ),
+    [messages, reply.status, reply.regenerating],
+  )
+  const lastGroup = useMemo(() => lastReplyGroup(messages ?? []), [messages])
 
   const [text, setText] = useState('')
   const [menuMsg, setMenuMsg] = useState<Message | null>(null)
@@ -112,6 +135,16 @@ export default function ChatPage() {
   const latestText = useRef('')
   const initialScrolled = useRef(false)
   const stickNext = useRef(false)
+  const atBottom = useRef(true)
+
+  const notConfigured = configProblem(ai)
+  const busy = reply.status === 'waiting' || reply.status === 'generating'
+
+  /* ---- 当前正在查看的会话（回复是否计入未读） ---- */
+  useEffect(() => {
+    setViewing(convId)
+    return () => setViewing(null)
+  }, [convId])
 
   /* ---- 草稿：进入时恢复，输入时防抖保存，离开/切后台时立即保存 ---- */
   useEffect(() => {
@@ -164,7 +197,7 @@ export default function ChatPage() {
     ta.style.height = `${Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT)}px`
   }, [text])
 
-  /* ---- 滚动：仅首次进入和自己发送时滚到底部，新消息不强制滚动 ---- */
+  /* ---- 滚动：首次进入、自己发送时滚到底部；正在底部时跟随新内容，离开底部则不打扰 ---- */
   const scrollToBottom = useCallback((smooth = false) => {
     const el = scrollRef.current
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
@@ -178,13 +211,21 @@ export default function ChatPage() {
     } else if (stickNext.current) {
       stickNext.current = false
       scrollToBottom(true)
+    } else if (atBottom.current) {
+      scrollToBottom()
     }
   }, [messages, scrollToBottom])
+
+  useLayoutEffect(() => {
+    if (atBottom.current && (busy || reply.status === 'error')) scrollToBottom()
+  }, [reply.partial, reply.status, busy, scrollToBottom])
 
   const onScroll = () => {
     const el = scrollRef.current
     if (!el) return
-    setShowJump(el.scrollHeight - el.scrollTop - el.clientHeight > BOTTOM_THRESHOLD)
+    const far = el.scrollHeight - el.scrollTop - el.clientHeight > BOTTOM_THRESHOLD
+    atBottom.current = !far
+    setShowJump(far)
   }
 
   const send = async () => {
@@ -200,7 +241,9 @@ export default function ChatPage() {
       stickNext.current = false
       setText(content)
       alert('消息保存失败，请重试')
+      return
     }
+    if (!notConfigured) scheduleReply(convId)
     taRef.current?.focus()
   }
 
@@ -218,26 +261,32 @@ export default function ChatPage() {
   const title = character?.name ?? ''
   const firstAt = visible[0]?.createdAt ?? Date.now()
   const firstDate = new Date(firstAt)
+  const typing = busy ? `${title}正在输入…` : undefined
+
+  const menuActions = (m: Message): SheetAction[] => {
+    const acts: SheetAction[] = [{ label: '复制', onClick: () => void copyText(m.content) }]
+    if (m.senderType === 'character' && lastGroup?.some((x) => x.id === m.id) && !busy && !notConfigured) {
+      acts.push({ label: '重新生成', onClick: () => void regenerate(convId) })
+    }
+    acts.push({ label: '删除', danger: true, onClick: () => void softDeleteMessage(m) })
+    return acts
+  }
 
   return (
     <div className="h-dvh flex flex-col">
       <ChatWallpaper />
       <NavBar
         title={title}
-        subtitle={worldName ?? undefined}
+        subtitle={typing ?? worldName ?? undefined}
         back="/"
-        right={
-          charId && (
-            <NavButton label="角色资料" icon="more" onClick={() => nav(`/character/${charId}`)} />
-          )
-        }
+        right={charId && <NavButton label="角色资料" icon="more" onClick={() => nav(`/character/${charId}`)} />}
       />
 
       <div className="relative flex-1 min-h-0">
         <div
           ref={scrollRef}
           onScroll={onScroll}
-          className="h-full overflow-y-auto pt-2 pb-4 flex flex-col gap-3.5"
+          className="chat-text h-full overflow-y-auto pt-2 pb-4 flex flex-col gap-3"
           style={{ overscrollBehavior: 'contain' }}
         >
           {/* 信笺抬头：日期胶囊 + 花体小字（纯装饰，不代表任何状态） */}
@@ -248,12 +297,22 @@ export default function ChatPage() {
             <div className="flourish w-[78%] text-[17px]">
               <span className="script-en whitespace-nowrap">A letter from winter</span>
             </div>
-            <span className="text-[10.5px] text-[var(--c-text-3)] tracking-wide">AI 回复将在下一轮接入，目前只保存你写下的消息</span>
+            {notConfigured && (
+              <button onClick={() => nav('/me/api')} className="press pill py-1 text-[11px] text-[var(--c-accent-strong)]" style={{ height: 'auto' }}>
+                尚未配置 AI 服务，消息只会保存在本地 · 去设置
+              </button>
+            )}
           </div>
 
           {visible.map((m, i) => {
             const prev = visible[i - 1]
+            const next = visible[i + 1]
             const mine = m.senderType === 'user'
+            const family = m.versionFamily ?? m.replyGroupId
+            const lastOfGroup = !mine && family && next?.replyGroupId !== m.replyGroupId
+            const versions = lastOfGroup && family ? versionInfo(messages ?? [], family) : null
+            // 同一方连续的消息只在第一条显示头像
+            const showAvatar = !prev || prev.senderType !== m.senderType || m.createdAt - prev.createdAt > GAP_MS
             return (
               <div key={m.id} className="flex flex-col gap-3">
                 {prev && m.createdAt - prev.createdAt > GAP_MS && (
@@ -261,17 +320,77 @@ export default function ChatPage() {
                     <span className="pill">{formatChatTime(m.createdAt)}</span>
                   </div>
                 )}
-                <Bubble
-                  msg={m}
-                  mine={mine}
-                  name={mine ? profile.nickname : title}
-                  avatar={mine ? profile.avatar : character?.avatar}
-                  ornament={theme.bubble.ornament}
-                  onMenu={() => setMenuMsg(m)}
-                />
+                <Row mine={mine} name={mine ? profile.nickname : title} avatar={mine ? profile.avatar : character?.avatar} showAvatar={showAvatar}>
+                  <Bubble msg={m} mine={mine} ornament={theme.bubble.ornament} onMenu={() => setMenuMsg(m)} />
+                  {versions && versions.count > 1 && family && (
+                    <div className="mt-1 flex items-center gap-1 text-[11px] text-[var(--c-text-3)]">
+                      <button
+                        aria-label="上一个版本"
+                        disabled={versions.index <= 1 || busy}
+                        onClick={() => void switchVersion(convId, family, -1)}
+                        className="press h-6 w-6 flex items-center justify-center disabled:opacity-30"
+                      >
+                        <Icon name="back" size="xs" />
+                      </button>
+                      <span className="tabular-nums">
+                        {versions.index} / {versions.count}
+                      </span>
+                      <button
+                        aria-label="下一个版本"
+                        disabled={versions.index >= versions.count || busy}
+                        onClick={() => void switchVersion(convId, family, 1)}
+                        className="press h-6 w-6 flex items-center justify-center disabled:opacity-30"
+                      >
+                        <Icon name="forward" size="xs" />
+                      </button>
+                    </div>
+                  )}
+                </Row>
               </div>
             )
           })}
+
+          {/* 生成中：真实的流式内容；尚未收到内容时显示输入中的点 */}
+          {busy && (
+            <Row mine={false} name={title} avatar={character?.avatar} showAvatar>
+              <div className="bubble bubble-them whitespace-pre-wrap break-words" aria-live="polite">
+                {reply.partial ? (
+                  reply.partial
+                ) : (
+                  <span className="typing-dots" aria-label={`${title}正在输入`}>
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                )}
+              </div>
+            </Row>
+          )}
+
+          {reply.status === 'error' && (
+            <div className="mx-6 mt-1 glass-1 rounded-[var(--radius-card)] px-4 py-3 text-[12.5px] leading-relaxed">
+              <div className="flex items-start gap-2 text-[var(--c-danger)]">
+                <Icon name="alert" size="sm" className="shrink-0 mt-0.5" />
+                <span>{reply.error}</span>
+              </div>
+              <div className="mt-2.5 flex justify-end gap-2">
+                <button onClick={() => dismissError(convId)} className="press h-7 px-3 rounded-full text-[12px] text-[var(--c-text-2)]">
+                  关闭
+                </button>
+                {(reply.errorKind === 'config' || reply.errorKind === 'auth' || reply.errorKind === 'model' || reply.errorKind === 'network') && (
+                  <button onClick={() => nav('/me/api')} className="press h-7 px-3 rounded-full border border-[var(--c-line)] bg-white/50 text-[12px] text-[var(--c-text-2)]">
+                    检查设置
+                  </button>
+                )}
+                <button
+                  onClick={() => void runReply(convId, reply.regenerating)}
+                  className="press h-7 px-3 rounded-full bg-[var(--c-accent)] text-white text-[12px]"
+                >
+                  重试
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {showJump && (
@@ -285,7 +404,7 @@ export default function ChatPage() {
         )}
       </div>
 
-      {/* 悬浮输入栏：只保留真实可用的发送按钮 */}
+      {/* 悬浮输入栏：发送；生成中且输入框为空时变为「停止」 */}
       <footer className="shrink-0 relative z-10 px-3 pt-1.5" style={{ paddingBottom: 'calc(var(--safe-bottom) + 8px)' }}>
         <div className="glass-1 rounded-[24px] p-1.5 flex items-end gap-1.5 shadow-[var(--shadow-float)]">
           <textarea
@@ -298,28 +417,31 @@ export default function ChatPage() {
             className="flex-1 min-w-0 resize-none rounded-[19px] bg-white/55 border border-white/70 px-3.5 py-[7px] text-[16px] leading-snug outline-none placeholder:text-[var(--c-text-3)]"
             style={{ maxHeight: MAX_INPUT_HEIGHT }}
           />
-          <button
-            aria-label="发送"
-            onClick={() => void send()}
-            disabled={!text.trim()}
-            className={`press h-[34px] w-[34px] shrink-0 rounded-full flex items-center justify-center transition-colors ${
-              text.trim() ? 'bg-[var(--c-accent)] text-white' : 'bg-white/50 text-[var(--c-text-3)]'
-            }`}
-          >
-            <Icon name="send" size="sm" />
-          </button>
+          {busy && !text.trim() ? (
+            <button
+              aria-label="停止生成"
+              onClick={() => stopReply(convId)}
+              className="press h-[34px] w-[34px] shrink-0 rounded-full flex items-center justify-center bg-white/70 border border-[var(--c-line)] text-[var(--c-accent-strong)]"
+            >
+              <Icon name="stop" size="xs" stroke="bold" />
+            </button>
+          ) : (
+            <button
+              aria-label="发送"
+              onClick={() => void send()}
+              disabled={!text.trim()}
+              className={`press h-[34px] w-[34px] shrink-0 rounded-full flex items-center justify-center transition-colors ${
+                text.trim() ? 'bg-[var(--c-accent)] text-white' : 'bg-white/50 text-[var(--c-text-3)]'
+              }`}
+            >
+              <Icon name="send" size="sm" />
+            </button>
+          )}
         </div>
       </footer>
 
       {menuMsg && (
-        <ActionSheet
-          title={menuMsg.content.slice(0, 30)}
-          onClose={() => setMenuMsg(null)}
-          actions={[
-            { label: '复制', onClick: () => void copyText(menuMsg.content) },
-            { label: '删除', danger: true, onClick: () => void softDeleteMessage(menuMsg) },
-          ]}
-        />
+        <ActionSheet title={menuMsg.content.slice(0, 30)} onClose={() => setMenuMsg(null)} actions={menuActions(menuMsg)} />
       )}
     </div>
   )
