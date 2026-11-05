@@ -457,6 +457,7 @@ test('数据库升级（v3 → v4）：旧表情包与聊天记录完整保留�
   assert.equal(s?.favorite, true)
   assert.equal((await db.stickerImages.get('stk_old'))?.dataUrl, PNG)
   assert.equal((await db.messages.get('m_old'))?.stickerId, 'stk_old')
+})
 
 /* ---------------- 长篇人设 DOCX：导入 → 保存 → 刷新 → 上下文 ---------------- */
 
