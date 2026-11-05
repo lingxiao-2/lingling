@@ -1,22 +1,30 @@
 /**
- * OpenAI 兼容 Chat Completions 客户端（流式）。
- *  - 个人测试模式：POST {baseUrl}/chat/completions，Authorization: Bearer <apiKey>
+ * 统一的聊天请求接口（OpenAI 兼容 Chat Completions，流式）。两种服务共用同一套上下文与消息处理：
+ *  - 聆聆默认服务：POST {serviceUrl}/v1/chat/completions，X-Lingling-Device：匿名设备 ID；
+ *    模型、参数上限与额度都由服务端决定，前端没有任何官方密钥
+ *  - 自己的 API · 个人测试模式：POST {baseUrl}/chat/completions，Authorization: Bearer <apiKey>
  *  - 安全代理模式：POST {proxyUrl}/v1/chat/completions，X-Lingling-Token: <proxyToken>，密钥由代理注入
  * 不在代码中写死任何地址或密钥；所有配置来自用户设置。
  */
 import type { AIConfig } from '../../db/schema'
 import type { ChatTurn } from './provider'
+import { CLIENT_ID, getServiceUrl, serviceAvailable } from './serviceConfig'
 
 export class AIError extends Error {
   constructor(
     message: string,
-    public kind: 'config' | 'auth' | 'model' | 'rate' | 'quota' | 'network' | 'server' | 'aborted' | 'empty' | 'other',
+    public kind: 'config' | 'unavailable' | 'auth' | 'model' | 'rate' | 'quota' | 'network' | 'server' | 'aborted' | 'empty' | 'other',
+    /** 额度重置时间（默认服务额度用完时） */
+    public resetAt?: string,
   ) {
     super(message)
   }
 }
 
-export function configProblem(c: AIConfig): string | null {
+export function configProblem(c: AIConfig, serviceUrl = getServiceUrl()): string | null {
+  if (c.service === 'lingling') {
+    return serviceAvailable(serviceUrl) ? null : '聆聆默认服务尚未开通。现在可以在「我的 → AI 服务」中改用自己的 API'
+  }
   if (c.mode === 'proxy') {
     if (!c.proxyUrl.trim()) return '请先在「我的 → API 设置」中填写代理地址'
     if (!/^https:\/\//i.test(c.proxyUrl.trim())) return '代理地址需要以 https:// 开头'
@@ -29,31 +37,67 @@ export function configProblem(c: AIConfig): string | null {
   return null
 }
 
-function endpoint(c: AIConfig): { url: string; headers: Record<string, string> } {
+interface Target {
+  url: string
+  headers: Record<string, string>
+  /** 请求体中的模型与参数（默认服务由服务端决定，不发送） */
+  params: Record<string, unknown>
+}
+
+/** 统一接口：根据所选服务决定请求地址、请求头与参数 */
+export function resolveTarget(c: AIConfig, deviceId = '', serviceUrl = getServiceUrl()): Target {
+  if (c.service === 'lingling') {
+    return {
+      url: `${serviceUrl}/v1/chat/completions`,
+      headers: { 'Content-Type': 'application/json', 'X-Lingling-Device': deviceId, 'X-Lingling-Client': CLIENT_ID },
+      params: {},
+    }
+  }
+  const params = { model: c.model.trim(), temperature: c.temperature, max_tokens: c.maxTokens }
   if (c.mode === 'proxy') {
     return {
       url: `${c.proxyUrl.trim().replace(/\/+$/, '')}/v1/chat/completions`,
       headers: { 'Content-Type': 'application/json', 'X-Lingling-Token': c.proxyToken.trim() },
+      params,
     }
   }
   return {
     url: `${c.baseUrl.trim().replace(/\/+$/, '')}/chat/completions`,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.apiKey.trim()}` },
+    params,
   }
 }
 
-async function errorFromResponse(res: Response): Promise<AIError> {
+async function errorFromResponse(res: Response, c: AIConfig): Promise<AIError> {
   let detail = ''
+  let code = ''
+  let resetAt: string | undefined
   try {
     const body = await res.text()
     try {
-      const j = JSON.parse(body) as { error?: { message?: string } | string; message?: string }
+      const j = JSON.parse(body) as { error?: { message?: string; code?: string; resetAt?: string } | string; message?: string }
       detail = (typeof j.error === 'string' ? j.error : j.error?.message) ?? j.message ?? ''
+      if (typeof j.error === 'object') {
+        code = j.error?.code ?? ''
+        resetAt = j.error?.resetAt
+      }
     } catch {
       detail = body.slice(0, 160)
     }
   } catch {
     /* ignore */
+  }
+  if (c.service === 'lingling') {
+    if (code === 'quota_exceeded') {
+      return new AIError(detail || '今天的免费消息已经用完了。明天会自动恢复，也可以改用自己的 API 继续聊天', 'quota', resetAt)
+    }
+    if (res.status === 503 || code === 'service_busy' || code === 'maintenance') {
+      return new AIError(detail || '聆聆默认服务现在有点忙，请稍后再试，或改用自己的 API', 'unavailable')
+    }
+    if (res.status === 429) return new AIError(detail || '发送得太快了，请稍等一会儿再试', 'rate')
+    if (res.status === 401 || res.status === 403) return new AIError(detail || '聆聆默认服务拒绝了这次请求', 'unavailable')
+    if (res.status === 413) return new AIError(detail || '这段对话太长了，请删除部分内容后再试', 'other')
+    return new AIError(detail || `聆聆默认服务出错（${res.status}），请稍后再试`, 'server')
   }
   const tail = detail ? `（${detail.slice(0, 160)}）` : ''
   if (res.status === 401 || res.status === 403) return new AIError(`密钥或代理口令无效，服务拒绝访问${tail}`, 'auth')
@@ -66,6 +110,7 @@ async function errorFromResponse(res: Response): Promise<AIError> {
 
 function networkError(e: unknown, c: AIConfig): AIError {
   if ((e as { name?: string })?.name === 'AbortError') return new AIError('已停止生成', 'aborted')
+  if (c.service === 'lingling') return new AIError('暂时连不上聆聆默认服务，请检查网络后重试，或改用自己的 API', 'unavailable')
   return new AIError(
     c.mode === 'proxy'
       ? '无法连接到代理。请检查代理地址、网络，以及代理是否允许当前网站的来源（CORS）'
@@ -110,31 +155,28 @@ export interface StreamOptions {
   signal?: AbortSignal
   onDelta?: (full: string) => void
   fetchImpl?: typeof fetch
+  /** 聆聆默认服务：匿名设备 ID（额度计数用） */
+  deviceId?: string
 }
 
 /** 流式生成一次回复，返回完整文本。服务不支持流式时自动按普通响应处理。 */
-export async function streamChat({ config, messages, signal, onDelta, fetchImpl = fetch }: StreamOptions): Promise<string> {
+export async function streamChat({ config, messages, signal, onDelta, fetchImpl = fetch, deviceId = '' }: StreamOptions): Promise<string> {
   const problem = configProblem(config)
-  if (problem) throw new AIError(problem, 'config')
-  const { url, headers } = endpoint(config)
+  if (problem) throw new AIError(problem, config.service === 'lingling' ? 'unavailable' : 'config')
+  const { url, headers, params } = resolveTarget(config, deviceId)
   let res: Response
   try {
     res = await fetchImpl(url, {
       method: 'POST',
       headers,
       signal,
-      body: JSON.stringify({
-        model: config.model.trim(),
-        messages,
-        temperature: config.temperature,
-        max_tokens: config.maxTokens,
-        stream: true,
-      }),
+      // 注意：不要在任何日志中输出请求头或请求体（其中可能含有用户的 API Key）
+      body: JSON.stringify({ ...params, messages, stream: true }),
     })
   } catch (e) {
     throw networkError(e, config)
   }
-  if (!res.ok) throw await errorFromResponse(res)
+  if (!res.ok) throw await errorFromResponse(res, config)
 
   const type = res.headers.get('content-type') ?? ''
   let full = ''
@@ -179,7 +221,11 @@ export async function streamChat({ config, messages, signal, onDelta, fetchImpl 
 }
 
 /** 连接测试：发一条极短的请求，验证地址、密钥 / 口令、模型与 CORS */
-export async function testConnection(config: AIConfig, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; message: string }> {
+export async function testConnection(
+  config: AIConfig,
+  fetchImpl: typeof fetch = fetch,
+  deviceId = '',
+): Promise<{ ok: boolean; message: string }> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 20_000)
   try {
@@ -188,6 +234,7 @@ export async function testConnection(config: AIConfig, fetchImpl: typeof fetch =
       messages: [{ role: 'user', content: '请只回复：好' }],
       signal: ctrl.signal,
       fetchImpl,
+      deviceId,
     })
     return { ok: true, message: `连接成功，模型回复：「${text.trim().slice(0, 20)}」` }
   } catch (e) {

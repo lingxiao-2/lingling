@@ -7,6 +7,8 @@ import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { db, setSetting } from '../src/db/db'
 import { createCharacter, getOrCreateSingleConversation, saveImport, sendUserMessage } from '../src/db/repo'
+import { getDeviceId, normalizeAIConfig } from '../src/services/ai/service'
+import { setServiceUrlForTesting } from '../src/services/ai/serviceConfig'
 import {
   AGGREGATE_MS,
   getReplyState,
@@ -172,12 +174,49 @@ test('失败：显示错误、不写入任何 AI 消息，可重试', async () =
   assert.equal((await active()).filter((m) => m.senderType === 'character').length, 2)
 })
 
-test('未配置：给出配置错误，不发请求，不生成假回复', async () => {
+test('未配置任何服务：默认服务未开通时给出提示，不发请求，不生成假回复', async () => {
   await setSetting('ai-config', { mode: 'direct', baseUrl: '', apiKey: '', proxyUrl: '', proxyToken: '', model: '', temperature: 0.7, maxTokens: 200 })
   await sendUserMessage(convId, '你好')
   await runReply(convId)
-  assert.equal(getReplyState(convId).errorKind, 'config')
+  assert.equal(getReplyState(convId).errorKind, 'unavailable')
+  assert.match(getReplyState(convId).error!, /尚未开通/)
   assert.equal(calls.length, 0)
   assert.equal((await active()).length, 1)
   void charId
+})
+
+test('配置迁移：旧版已填写 API Key / 代理的用户自动视为「自己的 API」，聊天不中断', () => {
+  assert.equal(normalizeAIConfig({ apiKey: 'sk-old', baseUrl: 'https://a/v1', model: 'm' }).service, 'custom')
+  assert.equal(normalizeAIConfig({ mode: 'proxy', proxyUrl: 'https://p' }).service, 'custom')
+  assert.equal(normalizeAIConfig(undefined).service, 'lingling')
+  assert.equal(normalizeAIConfig({ apiKey: 'sk', service: 'lingling' }).service, 'lingling')
+})
+
+test('默认服务：携带匿名设备 ID、不带密钥；回复走同一套上下文与消息处理', async () => {
+  setServiceUrlForTesting('https://svc.example.com')
+  try {
+    await setSetting('ai-config', { service: 'lingling', mode: 'direct', baseUrl: '', apiKey: 'sk-should-not-be-sent', proxyUrl: '', proxyToken: '', model: '', temperature: 0.7, maxTokens: 200 })
+    await sendUserMessage(convId, '今晚钟楼会响吗')
+    await runReply(convId)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, 'https://svc.example.com/v1/chat/completions')
+    assert.match(calls[0].body.messages[0].content, /钟楼：午夜敲十三下/)
+    assert.ok(!('model' in calls[0].body))
+    const ai = (await active()).filter((m) => m.senderType === 'character')
+    assert.deepEqual(ai.map((m) => m.content), ['早呀', '今天也下雪了'])
+    const id = await getDeviceId()
+    assert.match(id, /^[A-Za-z0-9_-]{8,80}$/)
+    assert.equal(await getDeviceId(), id)
+  } finally {
+    setServiceUrlForTesting(null)
+  }
+})
+
+test('切换服务不会删除聊天记录', async () => {
+  await sendUserMessage(convId, '你好')
+  await runReply(convId)
+  const before = (await active()).length
+  await setSetting('ai-config', { service: 'lingling' })
+  await setSetting('ai-config', { service: 'custom', mode: 'direct', baseUrl: 'https://api.test/v1', apiKey: 'sk-x', proxyUrl: '', proxyToken: '', model: 'test-model', temperature: 0.7, maxTokens: 200 })
+  assert.equal((await active()).length, before)
 })

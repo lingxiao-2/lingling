@@ -211,7 +211,12 @@ export interface UserProfile {
 /** AI 服务配置；API Key 只保存在当前设备的 IndexedDB 中，不进入代码或仓库 */
 export interface AIConfig {
   /**
-   * direct：个人测试模式，浏览器直接请求服务商，密钥保存在本设备（会随请求发出）
+   * lingling：聆聆默认服务（无需 API Key，由聆聆服务端调用默认模型，有免费额度）
+   * custom：使用自己的 API（下面的 mode / baseUrl / apiKey / proxy… 只在此模式下使用）
+   */
+  service: 'lingling' | 'custom'
+  /**
+   * 自己的 API 的连接方式 —— direct：个人测试模式，浏览器直接请求服务商，密钥保存在本设备（会随请求发出）
    * proxy：安全代理模式，请求发给你自己部署的代理，密钥只保存在代理服务器上
    */
   mode: 'direct' | 'proxy'

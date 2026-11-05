@@ -299,7 +299,7 @@ export default function ChatPage() {
             </div>
             {notConfigured && (
               <button onClick={() => nav('/me/api')} className="press pill py-1 text-[11px] text-[var(--c-accent-strong)]" style={{ height: 'auto' }}>
-                尚未配置 AI 服务，消息只会保存在本地 · 去设置
+                {ai.service === 'lingling' ? '聆聆默认服务尚未开通，消息只会保存在本地 · 改用自己的 API' : '尚未配置 AI 服务，消息只会保存在本地 · 去设置'}
               </button>
             )}
           </div>
@@ -380,6 +380,11 @@ export default function ChatPage() {
                 {(reply.errorKind === 'config' || reply.errorKind === 'auth' || reply.errorKind === 'model' || reply.errorKind === 'network') && (
                   <button onClick={() => nav('/me/api')} className="press h-7 px-3 rounded-full border border-[var(--c-line)] bg-white/50 text-[12px] text-[var(--c-text-2)]">
                     检查设置
+                  </button>
+                )}
+                {ai.service === 'lingling' && (reply.errorKind === 'quota' || reply.errorKind === 'unavailable') && (
+                  <button onClick={() => nav('/me/api')} className="press h-7 px-3 rounded-full border border-[var(--c-line)] bg-white/50 text-[12px] text-[var(--c-text-2)]">
+                    使用自己的 API
                   </button>
                 )}
                 <button

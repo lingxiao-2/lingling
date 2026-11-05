@@ -1,13 +1,14 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, DEFAULT_AI_CONFIG, DEFAULT_PROFILE, setSetting } from '../db/db'
 import type { AIConfig, UserProfile } from '../db/schema'
+import { normalizeAIConfig } from '../services/ai/service'
 
 async function readProfile(): Promise<UserProfile> {
   return { ...DEFAULT_PROFILE, ...(((await db.settings.get('profile'))?.value as Partial<UserProfile> | undefined) ?? {}) }
 }
 
 async function readAIConfig(): Promise<AIConfig> {
-  return { ...DEFAULT_AI_CONFIG, ...(((await db.settings.get('ai-config'))?.value as Partial<AIConfig> | undefined) ?? {}) }
+  return normalizeAIConfig((await db.settings.get('ai-config'))?.value as Partial<AIConfig> | undefined)
 }
 
 /** 以下 hook 直接订阅 IndexedDB，刷新页面后数据保持不变。读取完成前返回默认值，适合展示。 */

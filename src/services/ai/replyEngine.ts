@@ -6,7 +6,8 @@
  *  - 只在用户发送、重试、重新生成时请求，不会自动发起无上限的请求
  */
 import { useSyncExternalStore } from 'react'
-import { db, DEFAULT_AI_CONFIG, DEFAULT_PROFILE } from '../../db/db'
+import { db, DEFAULT_PROFILE } from '../../db/db'
+import { getDeviceId, normalizeAIConfig } from './service'
 import { DEFAULT_WORLD_ID } from '../../db/schema'
 import type { AIConfig, Lorebook, Message, UserProfile } from '../../db/schema'
 import { uid } from '../../lib/util'
@@ -60,8 +61,7 @@ export function setViewing(convId: string | null) {
 }
 
 async function loadConfig(): Promise<AIConfig> {
-  const v = (await db.settings.get('ai-config'))?.value as Partial<AIConfig> | undefined
-  return { ...DEFAULT_AI_CONFIG, ...(v ?? {}) }
+  return normalizeAIConfig((await db.settings.get('ai-config'))?.value as Partial<AIConfig> | undefined)
 }
 
 /** 用户发送后调用：0.8 秒内的连续发送合并为一次请求 */
@@ -142,6 +142,7 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
       config,
       messages: ctx.messages,
       signal: ctrl.signal,
+      deviceId: config.service === 'lingling' ? await getDeviceId() : '',
       onDelta: (full) => {
         partial = full
         set(convId, { status: 'generating', partial: full, regenerating: regenerateFamily })

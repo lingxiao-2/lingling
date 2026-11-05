@@ -109,7 +109,21 @@ export default function MePage() {
         </Group>
 
         <Group en="AI">
-          <Row icon="key" label="API 设置" value={configProblem(ai) ? '未配置' : `${ai.mode === 'proxy' ? '代理 · ' : ''}${ai.model}`} onClick={() => nav('/me/api')} right={<Icon name="forward" size="sm" />} />
+          <Row
+            icon="key"
+            label="AI 服务"
+            value={
+              ai.service === 'lingling'
+                ? configProblem(ai)
+                  ? '默认服务 · 未开通'
+                  : '聆聆默认服务'
+                : configProblem(ai)
+                  ? '自己的 API · 未配置'
+                  : `自己的 API · ${ai.model}`
+            }
+            onClick={() => nav('/me/api')}
+            right={<Icon name="forward" size="sm" />}
+          />
         </Group>
 
         <Group en="Data">
