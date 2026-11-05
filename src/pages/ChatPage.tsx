@@ -503,7 +503,8 @@ export default function ChatPage() {
             // 同一方连续的消息只在第一条显示头像
             const showAvatar = !prev || prev.senderType !== m.senderType || m.createdAt - prev.createdAt > GAP_MS
             return (
-              <div key={m.id} className="flex flex-col gap-[18px]">
+              // 同一方连续发出的几条靠得更近，像一组消息
+              <div key={m.id} className="flex flex-col gap-[18px]" style={showAvatar ? undefined : { marginTop: -10 }}>
                 {prev && m.createdAt - prev.createdAt > GAP_MS && (
                   <div className="flex justify-center">
                     <span className="ice date-tag tabular-nums" style={{ fontFamily: 'inherit' }}>{formatChatTime(m.createdAt)}</span>
@@ -551,15 +552,11 @@ export default function ChatPage() {
           })}
 
           {/* 生成中：写完的消息会逐条出现在上面；正在写的一条较长时（认真回答）显示实时内容，否则显示输入中的点 */}
-          {busy && (
-            <Row
-              mine={false}
-              name={title}
-              avatar={character?.avatar}
-              showAvatar={!visible.length || visible[visible.length - 1].senderType !== 'character' || !reply.delivered}
-              avatarSize={avatarSize}
-              fontSize={fontSize}
-            >
+          {busy && (() => {
+            const cont = !!reply.delivered && visible.length > 0 && visible[visible.length - 1].senderType === 'character'
+            return (
+            <div style={cont ? { marginTop: -10 } : undefined}>
+            <Row mine={false} name={title} avatar={character?.avatar} showAvatar={!cont} avatarSize={avatarSize} fontSize={fontSize}>
               <div className="bubble bubble-them whitespace-pre-wrap break-words" aria-live="polite">
                 {reply.partial.length >= 40 ? (
                   reply.partial
@@ -572,7 +569,9 @@ export default function ChatPage() {
                 )}
               </div>
             </Row>
-          )}
+            </div>
+            )
+          })()}
 
           {reply.status === 'error' && (
             <div className="mx-8 ice rounded-[16px] px-4 py-3 text-[12.5px] leading-relaxed">
