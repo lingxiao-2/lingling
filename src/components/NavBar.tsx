@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Plus } from 'lucide-react'
 
 interface Props {
   title: ReactNode
@@ -59,6 +59,21 @@ export function NavButton({
       className="press h-10 w-10 flex items-center justify-center rounded-full"
     >
       {children}
+    </button>
+  )
+}
+
+/** 右上角精致的「+」入口：细线图标 + 发丝描边圆环 */
+export function PlusButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      aria-label={label}
+      onClick={onClick}
+      className="press h-10 w-10 flex items-center justify-center rounded-full"
+    >
+      <span className="h-[30px] w-[30px] rounded-full border border-[var(--c-accent)]/45 bg-white/60 flex items-center justify-center text-[var(--c-accent-strong)]">
+        <Plus size={17} strokeWidth={1.4} />
+      </span>
     </button>
   )
 }

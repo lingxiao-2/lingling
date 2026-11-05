@@ -44,14 +44,15 @@ body {
   overscroll-behavior-y: none;
 }
 
-button {
-  font: inherit;
-  color: inherit;
-}
-input,
-textarea {
-  font: inherit;
-  color: inherit;
+/* 放在 base 层：未分层的规则优先级高于 Tailwind 工具类，会让按钮上的 text-* 颜色与字号失效 */
+@layer base {
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
 }
 
 .glass {
@@ -131,4 +132,69 @@ textarea {
 }
 .brand-en::after {
   background: linear-gradient(90deg, var(--c-brand-soft), transparent);
+}
+
+/* ===== 资料库（角色 / 世界 / 世界书）===== */
+.sheet-title {
+  font-family: var(--font-serif-zh);
+  font-size: 17px;
+  letter-spacing: 0.08em;
+  color: var(--c-brand);
+}
+.sheet-fade {
+  animation: sheet-fade 0.18s ease-out;
+}
+.sheet-rise {
+  animation: sheet-rise 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes sheet-fade {
+  from { opacity: 0; }
+}
+@keyframes sheet-rise {
+  from { transform: translateY(16px); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet-fade,
+  .sheet-rise { animation: none; }
+}
+
+/* 分栏标签：文字 + 细下划线 */
+.lib-tab {
+  position: relative;
+  padding: 10px 2px 12px;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  color: var(--c-text-3);
+  transition: color 0.2s;
+}
+.lib-tab[aria-selected="true"] {
+  color: var(--c-brand);
+}
+.lib-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 16px;
+  height: 1.5px;
+  margin-left: -8px;
+  border-radius: 1px;
+  background: var(--c-accent);
+}
+
+/* 栏目标题：英文小字 + 中文衬线 */
+.eyebrow {
+  font-family: var(--font-serif-en);
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--c-brand-soft);
+}
+.serif-zh {
+  font-family: var(--font-serif-zh);
+}
+
+/* 世界封面上的文字 */
+.cover-shade {
+  background: linear-gradient(180deg, rgba(20, 38, 60, 0) 35%, rgba(20, 38, 60, 0.55) 100%);
 }

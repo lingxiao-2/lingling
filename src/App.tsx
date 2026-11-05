@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Outlet, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import TabBar from './components/TabBar'
 import { ensureDefaults } from './db/db'
 import MessagesPage from './pages/MessagesPage'
@@ -12,8 +12,10 @@ import CharacterProfilePage from './pages/CharacterProfilePage'
 import ApiSettingsPage from './pages/ApiSettingsPage'
 import ProfileEditPage from './pages/ProfileEditPage'
 import ImportPage from './pages/ImportPage'
-import LorebooksPage from './pages/LorebooksPage'
 import LorebookDetailPage from './pages/LorebookDetailPage'
+import LorebookEditPage from './pages/LorebookEditPage'
+import WorldDetailPage from './pages/WorldDetailPage'
+import WorldEditPage from './pages/WorldEditPage'
 
 function TabLayout() {
   return (
@@ -48,8 +50,14 @@ export default function App() {
       <Route path="me/api" element={<ApiSettingsPage />} />
       <Route path="me/profile" element={<ProfileEditPage />} />
       <Route path="import" element={<ImportPage />} />
-      <Route path="lorebooks" element={<LorebooksPage />} />
+      {/* 旧入口，保留以免已有链接失效 */}
+      <Route path="lorebooks" element={<Navigate to="/contacts?tab=lorebooks" replace />} />
+      <Route path="lorebook/new" element={<LorebookEditPage />} />
       <Route path="lorebook/:id" element={<LorebookDetailPage />} />
+      <Route path="lorebook/:id/edit" element={<LorebookEditPage />} />
+      <Route path="world/new" element={<WorldEditPage />} />
+      <Route path="world/:id" element={<WorldDetailPage />} />
+      <Route path="world/:id/edit" element={<WorldEditPage />} />
       <Route path="*" element={<MessagesPage />} />
     </Routes>
   )

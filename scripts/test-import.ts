@@ -7,12 +7,12 @@ import assert from 'node:assert/strict'
 import { draftFromSections, parseImportFile } from '../src/import/parse'
 import type { ParsedFile } from '../src/import/types'
 
-function ok(name: string, text: string, kind: 'character' | 'lorebook' = 'character'): ParsedFile {
+function ok(name: string, text: string, kind: 'character' | 'lorebook' | 'world' = 'character'): ParsedFile {
   const r = parseImportFile(name, text, kind)
   if (!r.ok) assert.fail(`期望解析成功，实际失败：${r.error}`)
   return r.file
 }
-function err(name: string, text: string, kind: 'character' | 'lorebook' = 'character'): string {
+function err(name: string, text: string, kind: 'character' | 'lorebook' | 'world' = 'character'): string {
   const r = parseImportFile(name, text, kind)
   assert.equal(r.ok, false, '期望解析失败')
   return r.ok ? '' : r.error
@@ -271,4 +271,72 @@ test('角色模式下导入世界书 JSON 仍按内容识别', () => {
   const f = ok('w.json', JSON.stringify({ name: '某世界', entries: [{ keys: ['a'], content: 'b' }] }), 'character')
   assert.equal(f.lorebooks.length, 1)
   assert.equal(f.lorebooks[0].name, '某世界')
+})
+
+/* ---------------- 世界导入（第三轮） ---------------- */
+
+test('世界模式：组合 JSON（世界 + 角色 + 世界书）', () => {
+  const combo = {
+    world: { name: '雪城', tagline: '永冬之城', setting: '一座常年飘雪的北方城市。', 气候: '严寒' },
+    characters: [{ name: '林晚', personality: '温柔', lorebooks: ['雪城地理'] }],
+    lorebooks: [{ name: '雪城地理', entries: [{ keys: ['钟楼'], content: '城中心的钟楼' }] }],
+  }
+  const f = ok('snowcity.json', JSON.stringify(combo), 'world')
+  assert.equal(f.format, 'combo-json')
+  assert.ok(f.world)
+  assert.equal(f.world!.name, '雪城')
+  assert.equal(f.world!.tagline, '永冬之城')
+  assert.equal(f.world!.description, '一座常年飘雪的北方城市。')
+  assert.deepEqual(f.world!.extensions.unmapped, { 气候: '严寒' })
+  assert.equal(f.characters.length, 1)
+  assert.equal(f.lorebooks.length, 1)
+  assert.deepEqual(f.links, [{ character: 0, lorebook: 0 }])
+})
+
+test('世界模式：只有世界设定的 JSON', () => {
+  const f = ok('w.json', JSON.stringify({ 世界名: '浮岛', 简介: '漂在云上的群岛', 世界观: '岛屿靠风帆相连。' }), 'world')
+  assert.equal(f.format, 'world-json')
+  assert.equal(f.characters.length, 0)
+  assert.equal(f.world!.name, '浮岛')
+  assert.equal(f.world!.tagline, '漂在云上的群岛')
+  assert.equal(f.world!.description, '岛屿靠风帆相连。')
+})
+
+test('世界模式：带角色专属字段的对象仍按角色解析', () => {
+  const f = ok('c.json', JSON.stringify({ name: '阿雪', personality: '活泼' }), 'world')
+  assert.equal(f.world, undefined)
+  assert.equal(f.characters[0].name, '阿雪')
+})
+
+test('世界模式：SillyTavern 角色卡照常解析为角色', () => {
+  const f = ok('card.json', JSON.stringify(stV2), 'world')
+  assert.equal(f.world, undefined)
+  assert.equal(f.characters[0].name, '林晚')
+  assert.equal(f.lorebooks.length, 1)
+})
+
+test('世界模式：Markdown 世界设定', () => {
+  const md = '# 雪城\n简介：永冬之城\n\n## 地理\n北方高原。\n\n## 历史\n建城三百年。'
+  const f = ok('x.md', md, 'world')
+  assert.equal(f.world!.name, '雪城')
+  assert.equal(f.world!.tagline, '永冬之城')
+  assert.match(f.world!.description, /## 地理\n北方高原。/)
+  assert.match(f.world!.description, /建城三百年/)
+  assert.equal(f.characters.length, 0)
+})
+
+test('世界模式：TXT 无标题时用文件名', () => {
+  const f = ok('星港.txt', '一座位于星环上的港口。', 'world')
+  assert.equal(f.world!.name, '星港')
+  assert.equal(f.world!.description, '一座位于星环上的港口。')
+  assert.ok(f.warnings.some((w) => w.includes('文件名')))
+})
+
+test('非世界模式：文件里的世界设定不会被混入', () => {
+  const combo = { world: { name: '雪城' }, characters: [{ name: '甲', personality: 'p' }] }
+  const f = ok('a.json', JSON.stringify(combo), 'character')
+  assert.equal(f.world, undefined)
+  assert.equal(f.characters.length, 1)
+  assert.ok(f.warnings.some((w) => w.includes('世界设定不会保存')))
+  assert.match(err('b.json', JSON.stringify({ world: { name: '雪城' } }), 'lorebook'), /只包含世界设定/)
 })

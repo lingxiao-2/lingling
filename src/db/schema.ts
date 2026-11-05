@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 2
+export const DB_SCHEMA_VERSION = 3
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -130,10 +130,29 @@ export interface Sticker {
   createdAt: number
 }
 
+/**
+ * 世界：独立实体。角色通过 Character.worldId 归属于一个世界（DEFAULT_WORLD_ID 视为「未归入世界」），
+ * 世界书通过 worldLorebooks 与世界多对多关联。三者分开存放，互不混淆。
+ */
 export interface World {
   id: string
   name: string
   description: string
+  /** 一句话简介（V3 起） */
+  tagline?: string
+  /** 封面图，压缩后的 dataURL（V3 起） */
+  cover?: string
+  extensions?: Record<string, unknown>
+  importSource?: ImportSource
+  createdAt: number
+  updatedAt?: number
+}
+
+/** 世界 ↔ 世界书 多对多关联，只用稳定 ID */
+export interface WorldLorebookLink {
+  id: string
+  worldId: string
+  lorebookId: string
   createdAt: number
 }
 
@@ -202,6 +221,7 @@ export class LinglingDB extends Dexie {
   settings!: Table<SettingRow, string>
   lorebooks!: Table<Lorebook, string>
   characterLorebooks!: Table<CharacterLorebookLink, string>
+  worldLorebooks!: Table<WorldLorebookLink, string>
 
   constructor() {
     super('lingling-ai')
@@ -221,6 +241,12 @@ export class LinglingDB extends Dexie {
     this.version(2).stores({
       lorebooks: 'id, name, updatedAt',
       characterLorebooks: 'id, characterId, lorebookId, &[characterId+lorebookId]',
+    })
+    // v3：新增世界 ↔ 世界书关联表；为角色的 worldId 建索引以便按世界查询居民。
+    // 世界的新字段均为可选，已有数据无需改写。
+    this.version(3).stores({
+      characters: 'id, name, updatedAt, worldId',
+      worldLorebooks: 'id, worldId, lorebookId, &[worldId+lorebookId]',
     })
   }
 }
