@@ -25,6 +25,7 @@ import {
   type TextSection,
   type WorldDraft,
 } from './types'
+import { assignTargets, capabilityNotes, guessCharacterName, splitDocSections, visibleChars } from './characterDoc'
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024
 
@@ -476,58 +477,67 @@ function splitSections(text: string, markdown: boolean, labelLines: boolean): Ra
 export function draftFromSections(sections: TextSection[], fallbackName: string): CharacterDraft {
   const draft = emptyCharacterDraft()
   const parts: Partial<Record<CharacterFieldKey, string[]>> = {}
+  const extras: { label: string; text: string }[] = []
   for (const s of sections) {
     if (s.target === 'ignore' || !s.text.trim()) continue
     if (s.target === 'name') {
       if (!draft.name) draft.name = firstLine(s.text, 40)
       continue
     }
-    // 标签与归属不一致时（例如未识别的标题归到背景故事），保留标题，避免丢失上下文
+    if (s.target === 'extra') {
+      extras.push({ label: s.label || '其他设定', text: s.text.trim() })
+      continue
+    }
+    // 标题与字段名不完全一致时（例如「共同经历」归入背景故事），保留小标题，避免丢失上下文
     const keepLabel = s.label && matchFieldLabel(s.label) !== s.target
     ;(parts[s.target] ??= []).push(keepLabel ? `【${s.label}】\n${s.text.trim()}` : s.text.trim())
   }
   for (const [field, list] of Object.entries(parts) as [CharacterFieldKey, string[]][]) {
     draft[field] = joinParts(...list)
   }
+  draft.extras = extras
   if (!draft.name) draft.name = fallbackName
   return draft
 }
 
-function parseTextCharacter(fileName: string, text: string, markdown: boolean, warnings: string[]): ParsedFile {
-  const raw = splitSections(text, markdown, true)
-  let nameFromTitle = ''
-  const hasNameSection = raw.some((s) => matchFieldLabel(s.label) === 'name')
-  const sections: TextSection[] = []
-  raw.forEach((s, i) => {
-    const field = matchFieldLabel(s.label)
-    if (i === 0 && markdown && s.level === 1 && !field && !hasNameSection) {
-      // 文件第一个一级标题（且不是字段名）视为角色名称
-      nameFromTitle = s.label
-      sections.push({ label: '角色名称', text: s.label, target: 'name' })
-      if (s.text) sections.push({ label: '', text: s.text, target: 'backstory' })
-      return
-    }
-    if (field === 'name') {
-      sections.push({ label: s.label, text: s.text, target: 'name' })
-      return
-    }
-    sections.push({ label: s.label, text: s.text, target: field ?? 'backstory' })
-  })
+/** 角色草稿中保存的全部文字（不含名称），用于核对是否丢失内容 */
+export function draftTextChars(d: CharacterDraft): number {
+  const fields = [d.bio, d.personality, d.speakingStyle, d.backstory, d.relationToUser, d.greeting, d.exampleDialogue]
+  return visibleChars(fields.join('')) + visibleChars((d.extras ?? []).map((e) => e.text).join(''))
+}
+
+function parseTextCharacter(fileName: string, text: string, _markdown: boolean, warnings: string[]): ParsedFile {
   const stem = fileStem(fileName)
-  const draft = draftFromSections(sections, stem)
-  if (nameFromTitle) warnings.push(`已将标题「${nameFromTitle}」作为角色名称，请确认`)
-  else if (!sections.some((s) => s.target === 'name')) warnings.push(`未找到角色名称，已暂用文件名「${stem}」，请确认或修改`)
-  if (sections.some((s) => s.target === 'backstory' && !matchFieldLabel(s.label))) {
-    warnings.push('部分段落无法确定归属，已暂放入「背景故事」，可在预览中调整')
+  const raw = assignTargets(splitDocSections(text))
+  const guess = guessCharacterName(text, stem, raw)
+  const sections: TextSection[] = raw.map(({ label, text: t, target, auto, level }) =>
+    // 以角色名作标题的一级章节（如「# 沈清」），其正文是整体介绍，归入背景故事
+    level === 1 && target === 'extra' && label === guess.name ? { label: '', text: t, target: 'backstory', auto: true } : { label, text: t, target, auto },
+  )
+  const draft = draftFromSections(sections, guess.name)
+  // 名称来自「姓名」章节时 draft 已有；否则使用识别结果
+  if (!sections.some((s) => s.target === 'name')) draft.name = guess.name
+  if (!guess.confident) {
+    warnings.push(
+      guess.candidates.length
+        ? `没能确定角色名称，暂用「${draft.name}」，请确认（候选：${guess.candidates.join('、')}）`
+        : `文件中没有明确的角色名称，暂用文件名「${draft.name}」，请确认或修改`,
+    )
+  }
+  warnings.push(...capabilityNotes(text))
+  const extra = sections.filter((s) => s.target === 'extra')
+  if (extra.length) {
+    warnings.push(`${extra.length} 个章节无法归入固定字段（如${extra.slice(0, 3).map((s) => `「${s.label || '开头部分'}」`).join('')}），已作为「其他设定」完整保留，可在预览中调整`)
   }
   return {
     fileName,
-    format: markdown ? 'markdown' : 'text',
+    format: _markdown ? 'markdown' : 'text',
     characters: [draft],
     lorebooks: [],
     links: [],
     warnings,
     sections,
+    nameCheck: { confident: guess.confident, candidates: guess.candidates, source: guess.source },
   }
 }
 

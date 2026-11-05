@@ -10,7 +10,7 @@ import { parseStructured, parseTextDocument } from './parse'
 import { ImportError, decodeText, sniff, type EncodingId } from './extract/bytes'
 import { readPngCard } from './extract/png'
 import { readZip, type ZipEntry } from './extract/zip'
-import { extractDocx } from './extract/docx'
+import { extractDocx, type DocxStats } from './extract/docx'
 import { extractPdf, pdfRawText, pdfToMarkdown, type PdfjsLike } from './extract/pdf'
 
 export interface PipelineDeps {
@@ -215,10 +215,11 @@ async function importBytes(
     if (type === 'zip') {
       const entries = readZip(bytes)
       if (entries.some((e) => e.name === 'word/document.xml')) {
-        const text = await extractDocx(entries)
+        const stats: DocxStats = { paragraphs: 0, chars: 0 }
+        const text = await extractDocx(entries, stats)
         if (!text.trim()) return [fail(fileName, 'Word 文档中没有可提取的文字')]
         const out = parseTextDocument(fileName, text, kind, { markdown: true, split: opts.split })
-        return [withMeta(out, 'docx', { doc: { text, markdown: true, rawText: text } })]
+        return [withMeta(out, 'docx', { doc: { text, markdown: true, rawText: text, paragraphs: stats.paragraphs } })]
       }
       if (entries.some((e) => e.name === 'index.xml' && entries.some((x) => x.name.startsWith('Index/')))) {
         return [fail(fileName, UNSUPPORTED.pages)]

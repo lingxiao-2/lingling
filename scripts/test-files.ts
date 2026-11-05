@@ -113,7 +113,10 @@ test('含表格的 DOCX：表格文字按行保留', async () => {
 test('DOCX 作为角色资料：标题段落可分配字段', async () => {
   const f = await ok('zh.docx', 'character')
   assert.ok(f.sections && f.sections.length >= 3)
-  assert.equal(f.characters[0].name, '雪城设定集')
+  // 「雪城设定集」是通用的设定标题，不能当作角色名；没有把握时请用户确认
+  assert.equal(f.nameCheck?.confident, false)
+  assert.ok(f.characters[0].name)
+  assert.notEqual(f.characters[0].name, '雪城设定集')
 })
 
 /* ---------------- PDF ---------------- */
