@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Icon } from '../theme/icons'
-import NavBar from '../components/NavBar'
+import NavBar, { NavButton } from '../components/NavBar'
+import { useFormImport } from '../import/useFormImport'
 import WorldCover from '../components/WorldCover'
 import { AreaField, PrimaryButton, Section, TextField } from '../components/ui'
 import { db } from '../db/db'
@@ -18,6 +19,21 @@ export default function WorldEditPage() {
   const [saving, setSaving] = useState(false)
   const loaded = useRef(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const fileImport = useFormImport(
+    'world',
+    (f) => (f.world ? `读取到世界「${f.world.name}」的设定（${f.world.description.length} 字）。` : '文件中没有世界设定。'),
+    (f) => {
+      const w = f.world
+      if (!w) return
+      setForm((cur) => ({
+        ...cur,
+        name: w.name || cur.name,
+        tagline: w.tagline || cur.tagline,
+        description: w.description || cur.description,
+      }))
+    },
+  )
 
   useEffect(() => {
     if (loaded.current || !existing) return
@@ -64,7 +80,12 @@ export default function WorldEditPage() {
 
   return (
     <div className="h-dvh flex flex-col">
-      <NavBar title={id ? '编辑世界' : '新建世界'} back />
+      <NavBar
+        title={id ? '编辑世界' : '新建世界'}
+        back
+        right={<NavButton label="从本地文件导入" icon="import" onClick={fileImport.open} />}
+      />
+      {fileImport.ui}
       <div className="flex-1 min-h-0 overflow-y-auto pb-10">
         <div className="px-4 pt-4">
           <button onClick={() => fileRef.current?.click()} className="press block w-full">

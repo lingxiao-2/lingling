@@ -35,7 +35,7 @@ export function formatChatTime(ts: number, now = Date.now()): string {
 }
 
 /** 读取图片并压缩为正方形 dataURL，用于头像 */
-export function imageToAvatar(file: File, size = 256): Promise<string> {
+export function imageToAvatar(file: Blob, size = 256): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()

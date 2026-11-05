@@ -13,10 +13,16 @@ import { saveImport } from '../db/repo'
 import type { ImportSummary } from '../db/repo'
 import { DEFAULT_WORLD_ID } from '../db/schema'
 import type { Character, Lorebook } from '../db/schema'
-import { MAX_FILE_BYTES, draftFromSections, fileStem, normalizeName, parseImportFile } from '../import/parse'
+import { draftFromSections, fileStem, normalizeName } from '../import/parse'
+import { FILE_ACCEPT, importFile, containerLabel, type ImportOptions } from '../import/pipeline'
+import { ENCODINGS, type EncodingId } from '../import/extract/bytes'
+import { browserCMapUrl, loadPdfjsBrowser } from '../import/pdfjsBrowser'
+import { imageToAvatar } from '../lib/util'
+import Avatar from '../components/Avatar'
 import {
   FIELD_LABELS,
   FORMAT_LABELS,
+  type ParsedFile,
   type CharacterDraft,
   type CharacterFieldKey,
   type ImportFormat,
@@ -37,6 +43,12 @@ interface FileInfo {
   fileName: string
   format: ImportFormat
   warnings: string[]
+  container?: ParsedFile['container']
+  doc?: ParsedFile['doc']
+  /** 文本类文档可按其它编码 / 拆分方式重新解析：保留原始字节（只在本页内存中） */
+  source?: { name: string; bytes: Uint8Array }
+  opts: ImportOptions
+  showRaw: boolean
 }
 
 interface CharItem {
@@ -48,6 +60,8 @@ interface CharItem {
   sections?: TextSection[]
   nameEdited: boolean
   expanded: boolean
+  /** 头像（PNG / CharX 卡片图片，压缩后的 dataURL） */
+  avatar?: string
 }
 
 interface BookItem {
@@ -186,6 +200,7 @@ export default function ImportPage() {
   const [saveError, setSaveError] = useState('')
   const [summary, setSummary] = useState<ImportSummary | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [anyFile, setAnyFile] = useState(false)
 
   const existingChars = useLiveQuery(() => db.characters.toArray(), [], [] as Character[])
   const existingBooks = useLiveQuery(() => db.lorebooks.toArray(), [], [] as Lorebook[])
@@ -199,6 +214,48 @@ export default function ImportPage() {
   )
 
   /* ---- 读取文件 ---- */
+  const pipelineDeps = { loadPdfjs: loadPdfjsBrowser, get cMapUrl() { return browserCMapUrl() } }
+
+  /** 把一个解析结果转换为预览条目 */
+  const buildItems = async (f: ParsedFile, fi: number) => {
+    let avatar: string | undefined
+    if (f.avatar) {
+      try {
+        avatar = await imageToAvatar(new Blob([f.avatar.bytes as BlobPart], { type: f.avatar.mime }))
+      } catch {
+        f.warnings.push('卡片图片无法作为头像读取，可在角色资料中另行上传')
+      }
+    }
+    const cs: CharItem[] = []
+    const charKeys = f.characters.map((draft, i) => {
+      const key = `f${fi}c${i}`
+      cs.push({
+        key,
+        fileIndex: fi,
+        include: true,
+        dupAction: 'skip',
+        draft,
+        sections: f.sections,
+        nameEdited: false,
+        expanded: !!f.sections,
+        avatar: i === 0 ? avatar : undefined,
+      })
+      return key
+    })
+    const bs: BookItem[] = f.lorebooks.map((draft, i) => ({
+      key: `f${fi}b${i}`,
+      fileIndex: fi,
+      include: true,
+      dupAction: 'skip' as DupAction,
+      draft,
+      keysText: draft.entries.map((e) => e.keys.join('，')),
+      linkNew: f.links.filter((l) => l.lorebook === i).map((l) => charKeys[l.character]),
+      linkExisting: [],
+      expanded: false,
+    }))
+    return { cs, bs }
+  }
+
   const readFiles = async (list: FileList | null) => {
     if (!list || list.length === 0) return
     setStage('reading')
@@ -210,60 +267,47 @@ export default function ImportPage() {
     let worldSrc: { fileName: string; format: ImportFormat } | null = null
 
     for (const file of Array.from(list)) {
-      if (file.size > MAX_FILE_BYTES) {
-        errs.push({ fileName: file.name, error: '文件超过 5 MB，暂不支持' })
-        continue
-      }
-      let text: string
+      let bytes: Uint8Array
       try {
-        text = await file.text()
+        bytes = new Uint8Array(await file.arrayBuffer())
       } catch {
-        errs.push({ fileName: file.name, error: '无法读取文件内容' })
+        errs.push({
+          fileName: file.name,
+          error: '无法读取文件。如果文件在 iCloud 云盘中，请先在「文件」App 里点开一次，等它下载到本机后再导入',
+        })
         continue
       }
-      const r = parseImportFile(file.name, text, kind)
-      if (!r.ok) {
-        errs.push({ fileName: r.fileName, error: r.error })
-        continue
-      }
-      const fi = infos.length
-      const f = r.file
-      if (f.world) {
-        if (!foundWorld) {
-          foundWorld = f.world
-          worldSrc = { fileName: f.fileName, format: f.format }
-        } else {
-          f.warnings.push(`已使用「${worldSrc?.fileName}」中的世界设定，本文件中的世界设定「${f.world.name}」未采用`)
+      const outcomes = await importFile(file.name, bytes, kind, pipelineDeps)
+      for (const r of outcomes) {
+        if (!r.ok) {
+          errs.push({ fileName: r.fileName, error: r.error })
+          continue
         }
+        const f = r.file
+        const fi = infos.length
+        if (f.world) {
+          if (!foundWorld) {
+            foundWorld = f.world
+            worldSrc = { fileName: f.fileName, format: f.format }
+          } else {
+            f.warnings.push(`已使用「${worldSrc?.fileName}」中的世界设定，本文件中的世界设定「${f.world.name}」未采用`)
+          }
+        }
+        const items = await buildItems(f, fi)
+        cs.push(...items.cs)
+        bs.push(...items.bs)
+        infos.push({
+          index: fi,
+          fileName: f.fileName,
+          format: f.format,
+          warnings: f.warnings,
+          container: f.container,
+          doc: f.doc,
+          source: f.doc && outcomes.length === 1 ? { name: file.name, bytes } : undefined,
+          opts: {},
+          showRaw: false,
+        })
       }
-      infos.push({ index: fi, fileName: f.fileName, format: f.format, warnings: f.warnings })
-      const charKeys = f.characters.map((draft, i) => {
-        const key = `f${fi}c${i}`
-        cs.push({
-          key,
-          fileIndex: fi,
-          include: true,
-          dupAction: 'skip',
-          draft,
-          sections: f.sections,
-          nameEdited: false,
-          expanded: !!f.sections,
-        })
-        return key
-      })
-      f.lorebooks.forEach((draft, i) => {
-        bs.push({
-          key: `f${fi}b${i}`,
-          fileIndex: fi,
-          include: true,
-          dupAction: 'skip',
-          draft,
-          keysText: draft.entries.map((e) => e.keys.join('，')),
-          linkNew: f.links.filter((l) => l.lorebook === i).map((l) => charKeys[l.character]),
-          linkExisting: [],
-          expanded: false,
-        })
-      })
     }
 
     setFiles(infos)
@@ -275,6 +319,26 @@ export default function ImportPage() {
     setSaveError('')
     setStage('preview')
   }
+
+  /** 用新的编码 / 拆分方式重新解析某个文档；该文件里已做的修改会被替换 */
+  const reparse = async (fi: number, opts: ImportOptions) => {
+    const info = files.find((x) => x.index === fi)
+    if (!info?.source) return
+    const [r] = await importFile(info.source.name, info.source.bytes, kind, pipelineDeps, opts)
+    if (!r) return
+    if (!r.ok) {
+      patchFile(fi, { opts, warnings: [r.error] })
+      return
+    }
+    const items = await buildItems(r.file, fi)
+    setChars((list) => [...list.filter((c) => c.fileIndex !== fi), ...items.cs])
+    setBooks((list) => [...list.filter((b) => b.fileIndex !== fi), ...items.bs])
+    if (kind === 'world' && r.file.world && worldSource?.fileName === info.fileName) setWorld(r.file.world)
+    patchFile(fi, { opts, doc: r.file.doc, warnings: r.file.warnings, format: r.file.format })
+  }
+
+  const patchFile = (fi: number, p: Partial<FileInfo>) =>
+    setFiles((list) => list.map((x) => (x.index === fi ? { ...x, ...p } : x)))
 
   /* ---- 重名判断（与已有数据，以及本批次中排在前面的项目） ---- */
   const charDup = (item: CharItem): string | null => {
@@ -327,6 +391,7 @@ export default function ImportPage() {
         savingChars.map((c) => ({
           key: c.key,
           draft: c.draft,
+          avatar: c.avatar,
           source: { fileName: files[c.fileIndex].fileName, format: files[c.fileIndex].format },
         })),
         savingBooks.map((b) => ({
@@ -342,6 +407,17 @@ export default function ImportPage() {
         world ? { draft: world, source: worldSource ?? undefined } : undefined,
         targetWorld ? targetWorld.id : undefined,
       )
+      // 保存成功后进入对应的资料页面
+      if (result.worldId) return nav(`/world/${result.worldId}`, { replace: true })
+      if (targetWorld && result.characterIds.length + result.lorebookIds.length > 0) {
+        return nav(`/world/${targetWorld.id}`, { replace: true })
+      }
+      if (result.characterIds.length === 1 && result.lorebookIds.length <= 1) {
+        return nav(`/character/${result.characterIds[0]}`, { replace: true })
+      }
+      if (result.characterIds.length === 0 && result.lorebookIds.length === 1) {
+        return nav(`/lorebook/${result.lorebookIds[0]}`, { replace: true })
+      }
       setSummary(result)
       setStage('done')
     } catch (e) {
@@ -447,30 +523,20 @@ export default function ImportPage() {
 
           <div className="card mx-4 mt-4 p-5 text-sm leading-relaxed text-[var(--c-text-2)]">
             <div className="text-[13px] text-[var(--c-text-3)] tracking-wider mb-2">支持的文件</div>
-            {kind === 'world' ? (
-              <ul className="list-disc pl-5 space-y-1">
-                <li>世界设定 Markdown / TXT：一级标题作为世界名称，其余内容作为设定</li>
-                <li>世界设定 JSON（name / 世界名、tagline / 简介、description / 世界观 等字段）</li>
-                <li>组合 JSON：{'{ world, characters, lorebooks }'}，一次导入世界、角色与世界书</li>
-                <li>可同时选择角色卡和世界书文件，它们会一起归入这个世界</li>
-              </ul>
-            ) : kind === 'character' ? (
-              <ul className="list-disc pl-5 space-y-1">
-                <li>SillyTavern 角色卡 JSON（V2，兼容 V1 / V3）；卡内的世界书会一并导入并自动关联</li>
-                <li>通用 JSON（name / 昵称 / 性格 / 说话风格 / 背景故事 等字段）</li>
-                <li>包含角色和世界书的组合 JSON</li>
-                <li>TXT / Markdown：按标题或「性格：」这样的行拆段，在预览中确认字段归属</li>
-              </ul>
-            ) : (
-              <ul className="list-disc pl-5 space-y-1">
-                <li>SillyTavern 世界书 JSON（World Info 导出，或角色卡的 character_book）</li>
-                <li>包含角色和世界书的组合 JSON</li>
-                <li>Markdown：每个「## 标题」成为一个条目，标题即关键词</li>
-                <li>TXT：整体作为一个条目</li>
-              </ul>
-            )}
-            <div className="mt-3 text-xs text-[var(--c-text-3)]">
-              暂不支持 PNG 图片角色卡，请先在 SillyTavern 中导出为 JSON。可一次选择多个文件，单个文件不超过 5 MB。所有内容会先显示预览，确认后才保存。
+            <ul className="list-disc pl-5 space-y-1">
+              <li>角色卡：SillyTavern PNG 角色卡（V2 / V3）、CharX、JSON、YAML</li>
+              <li>世界书：SillyTavern 世界书 JSON、角色卡内置世界书</li>
+              <li>文档：TXT（UTF-8 / GB18030 等）、Markdown、Word（.docx）、文字型 PDF</li>
+              <li>ZIP：内含上述角色卡或世界书时导入其中可识别的文件</li>
+              {kind === 'world' && <li>组合 JSON {'{ world, characters, lorebooks }'}；同时选择的角色卡与世界书会一起归入这个世界</li>}
+            </ul>
+            <div className="mt-3 text-xs text-[var(--c-text-3)] leading-relaxed">
+              {kind === 'lorebook'
+                ? '文档会按标题拆分为条目，也可改为整篇一个条目；文件里没有的关键词不会自动编造。'
+                : kind === 'character'
+                  ? '文档按标题或「性格：」这样的行拆段，在预览中确认每段属于哪个字段。'
+                  : '文档的一级标题作为世界名称，其余内容作为世界设定。'}
+              {' '}暂不支持旧版 .doc、扫描版 PDF（需要 OCR）、RAR / 7z。文件只在本机解析，不会上传；确认前不会保存任何内容。
             </div>
           </div>
 
@@ -479,12 +545,16 @@ export default function ImportPage() {
               {stage === 'reading' ? '正在读取…' : '选择文件'}
             </PrimaryButton>
             <div className="text-[11px] text-[var(--c-text-3)]">在 iPhone 上，请在弹出的菜单中选择「选取文件」</div>
+            <button onClick={() => setAnyFile((v) => !v)} className="press mt-1 text-[11px] text-[var(--c-accent-strong)]">
+              {anyFile ? '只显示支持的文件类型' : '看不到你的文件？改为显示全部文件'}
+            </button>
           </div>
-          {/* 不限制 accept：iOS 会把 .md 等未登记类型置灰，格式在读取后再校验 */}
+          {/* 同时列出扩展名与 MIME；若 iOS 仍将某些文件置灰，可切换为不限制类型，格式在读取后再校验 */}
           <input
             ref={fileRef}
             type="file"
             multiple
+            accept={anyFile ? undefined : FILE_ACCEPT}
             className="hidden"
             onChange={(e) => {
               void readFiles(e.target.files)
@@ -583,8 +653,55 @@ export default function ImportPage() {
             <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs text-[var(--c-text-3)]">
               <Icon name="file" size="xs" />
               <span className="truncate">{f.fileName}</span>
-              <span className="shrink-0">· {FORMAT_LABELS[f.format]}</span>
+              <span className="shrink-0">
+                · {f.container && !['json', 'txt', 'md'].includes(f.container) ? `${containerLabel(f.container)} · ` : ''}
+                {f.doc?.pages ? `${f.doc.pages} 页` : FORMAT_LABELS[f.format]}
+              </span>
             </div>
+            {f.doc && (
+              <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
+                {f.doc.encoding && f.source && (
+                  <select
+                    aria-label="文本编码"
+                    value={f.opts.encoding ?? f.doc.encoding}
+                    onChange={(e) => void reparse(f.index, { ...f.opts, encoding: e.target.value as EncodingId })}
+                    className="h-7 rounded-full bg-white/60 border border-[var(--c-line)] px-2.5 text-[12px] text-[var(--c-text-2)]"
+                  >
+                    {ENCODINGS.map((en) => (
+                      <option key={en.id} value={en.id}>
+                        编码：{en.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {kind === 'lorebook' && f.source && f.doc.markdown && (
+                  <div className="h-7 p-0.5 rounded-full bg-white/60 border border-[var(--c-line)] flex text-[12px]">
+                    {(['sections', 'whole'] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => void reparse(f.index, { ...f.opts, split: m })}
+                        className={`press px-2.5 rounded-full ${
+                          (f.opts.split ?? 'sections') === m ? 'bg-[var(--c-accent)] text-white' : 'text-[var(--c-text-2)]'
+                        }`}
+                      >
+                        {m === 'sections' ? '按章节拆分' : '整篇一个条目'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => patchFile(f.index, { showRaw: !f.showRaw })}
+                  className="press h-7 rounded-full bg-white/60 border border-[var(--c-line)] px-2.5 text-[12px] text-[var(--c-text-2)]"
+                >
+                  {f.showRaw ? '收起原文' : '核对原文'}
+                </button>
+              </div>
+            )}
+            {f.doc && f.showRaw && (
+              <pre className="mb-2 max-h-64 overflow-auto rounded-[var(--radius-sm)] bg-white/70 border border-[var(--c-line)] p-3 text-[12px] leading-relaxed text-[var(--c-text-2)] whitespace-pre-wrap break-words font-[inherit]">
+                {f.doc.rawText}
+              </pre>
+            )}
             {f.warnings.length > 0 && (
               <div className="mb-2">
                 <Notice>
@@ -609,9 +726,13 @@ export default function ImportPage() {
                         label="导入这个角色"
                         onClick={() => patchChar(c.key, (x) => ({ ...x, include: !x.include }))}
                       />
-                      <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-[var(--c-accent-soft)] text-[var(--c-accent-strong)]">
-                        角色
-                      </span>
+                      {c.avatar ? (
+                        <Avatar name={c.draft.name || '?'} src={c.avatar} size="picker" />
+                      ) : (
+                        <span className="shrink-0 text-[11px] px-1.5 py-0.5 rounded bg-[var(--c-accent-soft)] text-[var(--c-accent-strong)]">
+                          角色
+                        </span>
+                      )}
                       <input
                         value={c.draft.name}
                         onChange={(e) =>
@@ -767,7 +888,29 @@ export default function ImportPage() {
                     </div>
 
                     <div className="mt-2 space-y-2">
-                      <div className="text-xs text-[var(--c-text-3)]">{b.draft.entries.length} 个条目</div>
+                      <div className="flex items-center justify-between gap-2 text-xs text-[var(--c-text-3)]">
+                        <span>
+                          {b.draft.entries.length} 个条目
+                          {(() => {
+                            const n = b.draft.entries.filter((e, i) => !e.constant && !splitKeys(b.keysText[i] ?? '').length).length
+                            return n ? ` · ${n} 个缺少关键词` : ''
+                          })()}
+                        </span>
+                        {b.draft.entries.some((e, i) => !e.constant && !splitKeys(b.keysText[i] ?? '').length) && (
+                          <button
+                            onClick={() =>
+                              patchBook(b.key, (x) => ({
+                                ...x,
+                                expanded: true,
+                                keysText: x.keysText.map((t, i) => (t.trim() ? t : x.draft.entries[i]?.name ?? '')),
+                              }))
+                            }
+                            className="press shrink-0 text-[var(--c-accent-strong)]"
+                          >
+                            用条目名作关键词
+                          </button>
+                        )}
+                      </div>
                       {b.include && dup && (
                         <DupChooser
                           text={dup}
@@ -823,8 +966,23 @@ export default function ImportPage() {
                           <div key={i} className="rounded-xl bg-[var(--c-bg-2)] p-2.5">
                             <div className="flex items-center gap-2">
                               <span className="text-[14px] font-medium truncate flex-1">{e.name}</span>
-                              {e.constant && <span className="text-[10px] text-[var(--c-accent-strong)]">常驻</span>}
                               {!e.enabled && <span className="text-[10px] text-[var(--c-text-3)]">已停用</span>}
+                              <label className="shrink-0 flex items-center gap-1 text-[11px] text-[var(--c-text-2)]">
+                                <input
+                                  type="checkbox"
+                                  checked={e.constant}
+                                  onChange={(ev) =>
+                                    patchBook(b.key, (x) => ({
+                                      ...x,
+                                      draft: {
+                                        ...x.draft,
+                                        entries: x.draft.entries.map((en, j) => (j === i ? { ...en, constant: ev.target.checked } : en)),
+                                      },
+                                    }))
+                                  }
+                                />
+                                常驻
+                              </label>
                             </div>
                             <input
                               value={b.keysText[i] ?? ''}
@@ -834,7 +992,7 @@ export default function ImportPage() {
                                   keysText: x.keysText.map((t, j) => (j === i ? ev.target.value : t)),
                                 }))
                               }
-                              placeholder="关键词，用逗号分隔"
+                              placeholder={e.constant ? '常驻条目，可不填关键词' : '关键词，用逗号分隔（文件中没有提供）'}
                               className="mt-1.5 w-full rounded-lg bg-white px-2 py-1 text-xs outline-none border border-[var(--c-line)]"
                             />
                             <div className="mt-1.5 text-xs text-[var(--c-text-2)] whitespace-pre-wrap break-words line-clamp-4">

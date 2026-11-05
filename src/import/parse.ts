@@ -531,8 +531,39 @@ function parseTextCharacter(fileName: string, text: string, markdown: boolean, w
   }
 }
 
-function parseTextLorebook(fileName: string, text: string, markdown: boolean, warnings: string[]): ParsedFile {
+function parseTextLorebook(
+  fileName: string,
+  text: string,
+  markdown: boolean,
+  warnings: string[],
+  split: 'sections' | 'whole' = 'sections',
+): ParsedFile {
   const raw = splitSections(text, markdown, false)
+  const hasHeadings = markdown && raw.some((s) => s.level > 0)
+  if (split === 'whole' || !hasHeadings) {
+    // 整篇作为一个条目：正文原样保留（含标题），不编造关键词
+    const h1 = markdown ? /^\s{0,3}#\s+(.+?)\s*#*\s*$/m.exec(text) : null
+    const name = h1?.[1]?.trim() || fileStem(fileName)
+    if (!hasHeadings && split !== 'whole') {
+      warnings.push(markdown ? '文档中没有标题，已整体作为一个条目导入' : '纯文本没有标题，已整体作为一个条目导入；如需拆分，请改用 Markdown 标题（## 条目名）')
+    }
+    warnings.push('条目没有关键词：请在预览中手动补充，或设为常驻条目')
+    return {
+      fileName,
+      format: markdown ? 'markdown' : 'text',
+      characters: [],
+      lorebooks: [
+        {
+          name,
+          description: '',
+          entries: [{ name, keys: [], secondaryKeys: [], content: text.trim(), enabled: true, constant: false, extensions: {} }],
+          extensions: {},
+        },
+      ],
+      links: [],
+      warnings,
+    }
+  }
   let name = fileStem(fileName)
   let description = ''
   let body = raw
@@ -545,9 +576,10 @@ function parseTextLorebook(fileName: string, text: string, markdown: boolean, wa
     description = raw[0].text
     body = raw.slice(1)
   }
+  // 关键词不从标题自动生成：文件没有提供的关键词，由用户补充或设为常驻
   const entries: LoreEntryDraft[] = body.map((s, i) => ({
     name: s.label || `条目 ${i + 1}`,
-    keys: s.label ? [s.label] : [],
+    keys: [],
     secondaryKeys: [],
     content: s.text,
     enabled: true,
@@ -555,11 +587,8 @@ function parseTextLorebook(fileName: string, text: string, markdown: boolean, wa
     extensions: {},
   }))
   if (entries.length === 0) warnings.push('文件中没有可作为条目的内容')
-  if (!markdown || !raw.some((s) => s.level > 0)) {
-    warnings.push('纯文本没有标题，已整体作为一个条目导入；如需拆分，请改用 Markdown 标题（## 条目名）')
-  }
   const noKeys = entries.filter((e) => e.keys.length === 0).length
-  if (noKeys) warnings.push(`${noKeys} 个条目没有关键词，可在预览中补充`)
+  if (noKeys) warnings.push(`${noKeys} 个条目没有关键词：请在预览中手动补充，或设为常驻条目`)
   return {
     fileName,
     format: markdown ? 'markdown' : 'text',
@@ -602,74 +631,82 @@ function parseTextWorld(fileName: string, text: string, markdown: boolean, warni
  * 总入口
  * ==================================================================== */
 
+/** 结构化数据（JSON / YAML / PNG 卡 / CharX 解析出的对象）→ 角色、世界书、世界 */
+export function parseStructured(fileName: string, root: unknown, kind: ImportKind): ParseOutcome {
+  const fail = (error: string): ParseOutcome => ({ ok: false, fileName, error })
+  const warnings: string[] = []
+  const r = parseJsonRoot(root, fileName, warnings, kind)
+  if (typeof r === 'string') return fail(r)
+  let world = r.world
+  if (world && kind !== 'world') {
+    warnings.push('文件中包含世界设定，当前不是世界导入，世界设定不会保存。如需导入，请到「世界」中选择从本地文件导入')
+    world = undefined
+    if (r.characters.length === 0 && r.lorebooks.length === 0) {
+      return fail('这个文件只包含世界设定，请到「世界」中选择从本地文件导入')
+    }
+  }
+  if (world && !world.name) {
+    world.name = fileStem(fileName)
+    warnings.push(`世界缺少名称，已暂用文件名「${world.name}」，请确认`)
+  }
+  r.characters.forEach((ch, i) => {
+    if (!ch.name) {
+      ch.name = r.characters.length === 1 ? fileStem(fileName) : ''
+      warnings.push(ch.name ? `角色缺少名称，已暂用文件名「${ch.name}」，请确认` : `第 ${i + 1} 个角色缺少名称，请在预览中填写`)
+    }
+    const filled = [ch.bio, ch.personality, ch.speakingStyle, ch.backstory, ch.relationToUser, ch.greeting, ch.exampleDialogue]
+    if (!filled.some(Boolean)) warnings.push(`角色「${ch.name || i + 1}」没有任何设定内容`)
+  })
+  const formats = [...r.formats]
+  const format: ImportFormat = r.formats.has('combo-json') || formats.length > 1 ? 'combo-json' : formats[0] ?? 'generic-json'
+  return {
+    ok: true,
+    file: { fileName, format, characters: r.characters, lorebooks: r.lorebooks, links: r.links, warnings, world },
+  }
+}
+
+export interface TextDocOptions {
+  markdown: boolean
+  /** 世界书：按章节拆分（默认）或整篇一个条目 */
+  split?: 'sections' | 'whole'
+}
+
+/** 文本文档（TXT / Markdown / DOCX / PDF 提取后的文字）→ 角色、世界书或世界设定 */
+export function parseTextDocument(fileName: string, rawText: string, kind: ImportKind, opts: TextDocOptions): ParseOutcome {
+  const text = rawText.replace(/^\uFEFF/, '')
+  if (!text.trim()) return { ok: false, fileName, error: '文件中没有可提取的文字' }
+  const warnings: string[] = []
+  const file =
+    kind === 'lorebook'
+      ? parseTextLorebook(fileName, text, opts.markdown, warnings, opts.split)
+      : kind === 'world'
+        ? parseTextWorld(fileName, text, opts.markdown, warnings)
+        : parseTextCharacter(fileName, text, opts.markdown, warnings)
+  return { ok: true, file }
+}
+
+/**
+ * 文本内容的快捷入口（JSON / TXT / Markdown，按扩展名判断）。
+ * 二进制格式（PNG、CharX、ZIP、DOCX、PDF）请使用 pipeline.ts 的 importFile()。
+ */
 export function parseImportFile(fileName: string, rawText: string, kind: ImportKind): ParseOutcome {
   const fail = (error: string): ParseOutcome => ({ ok: false, fileName, error })
   const ext = (fileName.match(/\.([^.]+)$/)?.[1] ?? '').toLowerCase()
-  if (['png', 'webp', 'jpg', 'jpeg'].includes(ext)) {
-    return fail('暂不支持图片格式的角色卡（PNG 内嵌数据）。请在 SillyTavern 中导出为 JSON 后再导入')
-  }
-  if (['charx', 'yaml', 'yml', 'zip', 'docx', 'pdf'].includes(ext)) {
-    return fail(`暂不支持 .${ext} 文件，请使用 JSON、TXT 或 Markdown`)
-  }
-
-  const text = rawText.replace(/^﻿/, '')
+  const text = rawText.replace(/^\uFEFF/, '')
   if (!text.trim()) return fail('文件为空')
   if (text.includes('\u0000')) return fail('文件看起来不是文本文件，请确认格式')
-
   const isJson = ext === 'json' || (!['txt', 'md', 'markdown'].includes(ext) && /^\s*[[{]/.test(text))
-  const warnings: string[] = []
-
   if (isJson) {
     let root: unknown
     try {
       root = JSON.parse(text)
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return fail(`JSON 格式错误，无法解析（${msg}）`)
+      return fail(`JSON 格式错误，无法解析（${e instanceof Error ? e.message : String(e)}）`)
     }
-    const r = parseJsonRoot(root, fileName, warnings, kind)
-    if (typeof r === 'string') return fail(r)
-    let world = r.world
-    if (world && kind !== 'world') {
-      warnings.push('文件中包含世界设定，当前不是世界导入，世界设定不会保存。如需导入，请到「世界」中选择从本地文件导入')
-      world = undefined
-      if (r.characters.length === 0 && r.lorebooks.length === 0) {
-        return fail('这个文件只包含世界设定，请到「世界」中选择从本地文件导入')
-      }
-    }
-    if (world && !world.name) {
-      world.name = fileStem(fileName)
-      warnings.push(`世界缺少名称，已暂用文件名「${world.name}」，请确认`)
-    }
-    r.characters.forEach((ch, i) => {
-      if (!ch.name) {
-        ch.name = r.characters.length === 1 ? fileStem(fileName) : ''
-        warnings.push(
-          ch.name ? `角色缺少名称，已暂用文件名「${ch.name}」，请确认` : `第 ${i + 1} 个角色缺少名称，请在预览中填写`,
-        )
-      }
-      const filled = [ch.bio, ch.personality, ch.speakingStyle, ch.backstory, ch.relationToUser, ch.greeting, ch.exampleDialogue]
-      if (!filled.some(Boolean)) warnings.push(`角色「${ch.name || i + 1}」没有任何设定内容`)
-    })
-    const formats = [...r.formats]
-    const format: ImportFormat = r.formats.has('combo-json') || formats.length > 1 ? 'combo-json' : formats[0] ?? 'generic-json'
-    return {
-      ok: true,
-      file: { fileName, format, characters: r.characters, lorebooks: r.lorebooks, links: r.links, warnings, world },
-    }
+    return parseStructured(fileName, root, kind)
   }
-
-  if (!['txt', 'md', 'markdown', ''].includes(ext)) {
-    return fail(`暂不支持 .${ext} 文件，请使用 JSON、TXT 或 Markdown`)
-  }
-  const markdown = ext === 'md' || ext === 'markdown'
-  const file =
-    kind === 'lorebook'
-      ? parseTextLorebook(fileName, text, markdown, warnings)
-      : kind === 'world'
-        ? parseTextWorld(fileName, text, markdown, warnings)
-        : parseTextCharacter(fileName, text, markdown, warnings)
-  return { ok: true, file }
+  if (!['txt', 'md', 'markdown', ''].includes(ext)) return fail(`.${ext} 不是文本格式，请通过文件导入流程读取`)
+  return parseTextDocument(fileName, text, kind, { markdown: ext === 'md' || ext === 'markdown' })
 }
 
 /** 导出给 UI：Extensions 是否非空 */

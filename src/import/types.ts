@@ -90,6 +90,32 @@ export interface ParsedFile {
   sections?: TextSection[]
   /** 仅「世界」导入模式：文件中的世界设定 */
   world?: WorldDraft
+  /** 文件来源（PNG 角色卡、CharX、ZIP 内文件、DOCX、PDF、YAML…），用于预览中的说明 */
+  container?: Container
+  /** PNG 角色卡图片本身 / CharX 内的图标，作为角色头像（只用于 characters[0]） */
+  avatar?: { bytes: Uint8Array; mime: string }
+  /** 文本类文档：提取出的文字（可按其它方式重新解析）和供用户核对的原文 */
+  doc?: {
+    text: string
+    markdown: boolean
+    rawText: string
+    encoding?: string
+    pages?: number
+  }
+}
+
+export type Container = 'png' | 'charx' | 'zip' | 'yaml' | 'docx' | 'pdf' | 'txt' | 'md' | 'json'
+
+export const CONTAINER_LABELS: Record<Container, string> = {
+  png: 'PNG 角色卡',
+  charx: 'CharX 角色卡',
+  zip: 'ZIP 压缩包',
+  yaml: 'YAML',
+  docx: 'Word 文档',
+  pdf: 'PDF 文档',
+  txt: '纯文本',
+  md: 'Markdown',
+  json: 'JSON',
 }
 
 export type ParseOutcome =

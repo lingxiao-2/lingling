@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import NavBar from '../components/NavBar'
+import NavBar, { NavButton } from '../components/NavBar'
+import { useFormImport } from '../import/useFormImport'
 import Avatar from '../components/Avatar'
 import { AreaField, PrimaryButton, Section, TextField } from '../components/ui'
 import { db } from '../db/db'
@@ -38,6 +39,39 @@ export default function CharacterEditPage() {
   const [saving, setSaving] = useState(false)
   const loaded = useRef(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  /** 从本地文件（角色卡 / 文档）填写表单 */
+  const fileImport = useFormImport(
+    'character',
+    (f) =>
+      f.characters.length
+        ? `读取到角色「${f.characters[0].name}」${f.characters.length > 1 ? `（文件中共 ${f.characters.length} 个角色，只使用第一个）` : ''}${f.avatar ? '，含头像' : ''}。`
+        : '文件中没有角色资料。',
+    async (f) => {
+      const d = f.characters[0]
+      if (!d) return
+      let avatar: string | undefined
+      if (f.avatar) {
+        try {
+          avatar = await imageToAvatar(new Blob([f.avatar.bytes as BlobPart], { type: f.avatar.mime }))
+        } catch {
+          avatar = undefined
+        }
+      }
+      setForm((cur) => ({
+        ...cur,
+        name: d.name || cur.name,
+        avatar: avatar ?? cur.avatar,
+        bio: d.bio || cur.bio,
+        personality: d.personality || cur.personality,
+        speakingStyle: d.speakingStyle || cur.speakingStyle,
+        backstory: d.backstory || cur.backstory,
+        relationToUser: d.relationToUser || cur.relationToUser,
+        greeting: d.greeting || cur.greeting,
+        exampleDialogue: d.exampleDialogue || cur.exampleDialogue,
+      }))
+    },
+  )
 
   useEffect(() => {
     if (loaded.current || !existing) return
@@ -104,7 +138,12 @@ export default function CharacterEditPage() {
 
   return (
     <div className="h-dvh flex flex-col">
-      <NavBar title={id ? '编辑角色' : '创建角色'} back />
+      <NavBar
+        title={id ? '编辑角色' : '创建角色'}
+        back
+        right={<NavButton label="从本地文件导入" icon="import" onClick={fileImport.open} />}
+      />
+      {fileImport.ui}
       <div className="flex-1 min-h-0 overflow-y-auto pb-10">
         <div className="flex justify-center pt-6">
           <button onClick={() => fileRef.current?.click()} className="press flex flex-col items-center gap-2">

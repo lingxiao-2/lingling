@@ -289,6 +289,8 @@ export interface ImportCharacterPlan {
   /** 预览中的临时键，用于关联 */
   key: string
   draft: CharacterDraft
+  /** 头像（压缩后的 dataURL），例如 PNG 角色卡图片本身 */
+  avatar?: string
   source: Omit<ImportSource, 'importedAt'>
 }
 
@@ -313,6 +315,8 @@ export interface ImportSummary {
   links: number
   /** 世界模式下新建的世界 ID */
   worldId?: string
+  characterIds: string[]
+  lorebookIds: string[]
 }
 
 /** 在一个事务里保存导入结果：要么全部成功，要么全部不写入 */
@@ -328,6 +332,8 @@ export async function saveImport(
   const idByKey = new Map<string, string>()
   let linkCount = 0
   let worldId = world ? uid('world') : undefined
+  const characterIds: string[] = []
+  const lorebookIds: string[] = []
 
   await db.transaction('rw', [db.characters, db.lorebooks, db.characterLorebooks, db.worlds, db.worldLorebooks], async () => {
     if (!world && targetWorldId && targetWorldId !== DEFAULT_WORLD_ID && (await db.worlds.get(targetWorldId))) {
@@ -352,6 +358,7 @@ export async function saveImport(
       const c: Character = {
         id: uid('char'),
         name: d.name.trim(),
+        avatar: plan.avatar,
         bio: d.bio.trim(),
         personality: d.personality.trim(),
         speakingStyle: d.speakingStyle.trim(),
@@ -368,6 +375,7 @@ export async function saveImport(
       }
       await db.characters.add(c)
       idByKey.set(plan.key, c.id)
+      characterIds.push(c.id)
     }
 
     for (const plan of lorebooks) {
@@ -383,6 +391,7 @@ export async function saveImport(
         updatedAt: now,
       }
       await db.lorebooks.add(book)
+      lorebookIds.push(book.id)
       if (worldId) {
         await db.worldLorebooks.add({ id: uid('wlink'), worldId, lorebookId: book.id, createdAt: now })
       }
@@ -401,5 +410,5 @@ export async function saveImport(
     }
   })
 
-  return { characters: characters.length, lorebooks: lorebooks.length, links: linkCount, worldId: world ? worldId : undefined }
+  return { characters: characters.length, lorebooks: lorebooks.length, links: linkCount, worldId: world ? worldId : undefined, characterIds, lorebookIds }
 }
