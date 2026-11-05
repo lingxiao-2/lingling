@@ -3,6 +3,8 @@
  * 「添加」：相册或文件多选、ZIP 合集一键导入，显示进度与结果（成功 / 重复 / 失败）。
  */
 import { useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Icon } from '../theme/icons'
 import { ActionSheet } from './Sheet'
@@ -17,6 +19,11 @@ import { useLongPress } from '../lib/usePress'
 
 type Tab = 'recent' | 'fav' | 'all' | `pack:${string}`
 
+/** 弹层放到 body 下：面板带毛玻璃（backdrop-filter），fixed 定位会被限制在面板内 */
+function Layer({ children }: { children: ReactNode }) {
+  return createPortal(children, document.body)
+}
+
 function Tile({ sticker, onSend, onMenu }: { sticker: Sticker; onSend: () => void; onMenu: () => void }) {
   const { consumeClick, ...press } = useLongPress(onMenu)
   return (
@@ -26,6 +33,7 @@ function Tile({ sticker, onSend, onMenu }: { sticker: Sticker; onSend: () => voi
         if (!consumeClick()) onSend()
       }}
       aria-label={`发送表情包${sticker.name ? `：${sticker.name}` : ''}`}
+      data-id={sticker.id}
       className="press relative aspect-square rounded-[12px] bg-white/35 flex items-center justify-center overflow-hidden select-none"
       style={{ WebkitTouchCallout: 'none' }}
     >
@@ -108,18 +116,18 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
     return list.sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.createdAt - a.createdAt)
   }, [stickers, tab])
 
-  const runImport = async (files: FileList | null) => {
-    if (!files || !files.length) return // 用户取消选择
+  const runImport = async (files: File[]) => {
+    if (!files.length) return // 用户取消选择
     const est = await storageEstimate()
     let total = 0
-    for (const f of Array.from(files)) total += f.size
+    for (const f of files) total += f.size
     if (est && est.quota - est.usage < total * 1.6) {
       toast('设备存储空间可能不足，请先删除一些表情包或清理 Safari 网站数据')
       return
     }
     setProgress({ done: 0, total: files.length })
     try {
-      const inputs = await Promise.all(Array.from(files).map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })))
+      const inputs = await Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })))
       const r = await importStickers(inputs, {
         prepare: prepareStickerBytes,
         existingHashes: await existingStickerHashes(),
@@ -184,10 +192,21 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
         </p>
       )}
 
-      <input ref={imgRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="hidden" onChange={(e) => { void runImport(e.target.files); e.target.value = '' }} />
-      <input ref={zipRef} type="file" accept=".zip,application/zip" multiple className="hidden" onChange={(e) => { void runImport(e.target.files); e.target.value = '' }} />
+      <input ref={imgRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple className="hidden" onChange={(e) => {
+          // 先复制文件列表：清空 value 会同时清空 FileList
+          const files: File[] = Array.from(e.target.files ?? [])
+          e.target.value = ''
+          void runImport(files)
+        }} />
+      <input ref={zipRef} type="file" accept=".zip,application/zip" multiple className="hidden" onChange={(e) => {
+          // 先复制文件列表：清空 value 会同时清空 FileList
+          const files: File[] = Array.from(e.target.files ?? [])
+          e.target.value = ''
+          void runImport(files)
+        }} />
 
       {addOpen && (
+        <Layer>
         <ActionSheet
           title="添加表情"
           onClose={() => setAddOpen(false)}
@@ -196,8 +215,10 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
             { label: '导入 ZIP 表情合集', hint: '解压后按合集分类，重复的图片会自动跳过', icon: <Icon name="import" />, onClick: () => zipRef.current?.click() },
           ]}
         />
+        </Layer>
       )}
       {menu && (
+        <Layer>
         <ActionSheet
           onClose={() => setMenu(null)}
           actions={[
@@ -207,9 +228,15 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
             { label: '删除', danger: true, onClick: () => void deleteSticker(menu.id) },
           ]}
         />
+        </Layer>
       )}
-      {preview && <Preview sticker={preview} analysis={preview.hash ? analyses.get(preview.hash) : undefined} onClose={() => setPreview(null)} toast={toast} />}
+      {preview && (
+        <Layer>
+          <Preview sticker={preview} analysis={preview.hash ? analyses.get(preview.hash) : undefined} onClose={() => setPreview(null)} toast={toast} />
+        </Layer>
+      )}
       {result && (
+        <Layer>
         <div className="fixed inset-0 z-50 flex items-center justify-center px-8" onClick={() => setResult(null)}>
           <div className="absolute inset-0 sheet-overlay sheet-fade" />
           <div className="relative w-full max-w-[320px] card px-5 pt-5 pb-4 sheet-rise" onClick={(e) => e.stopPropagation()}>
@@ -232,6 +259,7 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
             </div>
           </div>
         </div>
+        </Layer>
       )}
     </div>
   )
