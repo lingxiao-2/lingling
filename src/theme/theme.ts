@@ -4,6 +4,7 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, setSetting } from '../db/db'
+import { SNOWFLAKE_WHITE } from '../assets/winter/ornaments'
 
 export type WallpaperKind = 'default' | 'image' | 'color'
 
@@ -34,6 +35,8 @@ export interface ChatTextStyle {
   font: ChatFont
   /** 聊天文字大小（px） */
   size: number
+  /** 聊天头像尺寸（px，24 – 34） */
+  avatar: number
 }
 
 /** 聊天字体：优先使用 iPhone 自带字体，末尾附表情符号字体，保证中英文与 emoji 都能显示 */
@@ -44,7 +47,7 @@ export const CHAT_FONTS: Record<ChatFont, { label: string; stack: string }> = {
   kai: { label: '楷体', stack: `"Kaiti SC", "STKaiti", "KaiTi", "BiauKai", "Songti SC", serif, ${EMOJI}` },
 }
 
-export const DEFAULT_CHAT_TEXT: ChatTextStyle = { font: 'sans', size: 15 }
+export const DEFAULT_CHAT_TEXT: ChatTextStyle = { font: 'sans', size: 14, avatar: 26 }
 
 export interface ThemeSettings {
   themeId: 'winter-letter'
@@ -62,11 +65,12 @@ export interface ThemeSettings {
   overrides?: Record<string, string>
 }
 
+/** 默认气泡：参照冬日来信母版的半透明冰蓝玻璃 */
 export const DEFAULT_BUBBLE: BubbleStyle = {
-  them: '#ffffff',
-  me: '#dceaf8',
-  opacity: 0.58,
-  border: 0.75,
+  them: '#e6edf9',
+  me: '#dde6f6',
+  opacity: 0.4,
+  border: 0.74,
   ornament: true,
 }
 
@@ -119,6 +123,7 @@ export function themeVars(t: ThemeSettings): Record<string, string> {
     '--bubble-border': `rgba(255, 255, 255, ${b.border.toFixed(2)})`,
     '--chat-font': (CHAT_FONTS[t.chatText.font] ?? CHAT_FONTS.sans).stack,
     '--chat-font-size': `${Math.min(20, Math.max(13, t.chatText.size))}px`,
+    '--ornament-snowflake': SNOWFLAKE_WHITE,
   }
   if (t.fonts?.body) vars['--font-sans'] = t.fonts.body
   if (t.fonts?.serifZh) vars['--font-serif-zh'] = t.fonts.serifZh
