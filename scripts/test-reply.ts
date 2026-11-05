@@ -1,12 +1,15 @@
 /**
  * 回复引擎集成测试（真实 Dexie + fake-indexeddb + 模拟 OpenAI 流式服务）：npm test
- * 覆盖：发送聚合、上下文内容、多条消息拆分、未读、重新生成与版本切换、停止、失败、未配置。
+ * 覆盖：发送聚合、上下文内容、多条消息（结构化格式与回退）、逐条发出、表情包、未读、重新生成与版本切换、
+ *       停止、失败与重试不重复、刷新后数据仍在、未配置。
  */
 import 'fake-indexeddb/auto'
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { db, setSetting } from '../src/db/db'
-import { createCharacter, getOrCreateSingleConversation, saveImport, sendUserMessage } from '../src/db/repo'
+import { createCharacter, getOrCreateSingleConversation, saveImport, sendUserMessage, updateCharacter } from '../src/db/repo'
+import { addSticker, sendUserSticker } from '../src/db/stickerRepo'
+import { LinglingDB } from '../src/db/schema'
 import { getDeviceId, normalizeAIConfig } from '../src/services/ai/service'
 import { setServiceUrlForTesting } from '../src/services/ai/serviceConfig'
 import {
@@ -14,7 +17,9 @@ import {
   getReplyState,
   regenerate,
   runReply,
+  savePart,
   scheduleReply,
+  setPaceScaleForTesting,
   setViewing,
   stopReply,
   switchVersion,
@@ -23,8 +28,11 @@ import {
 
 type Call = { url: string; body: { messages: { role: string; content: string }[]; stream: boolean } }
 let calls: Call[] = []
-let reply = '早呀\n\n今天也下雪了'
-let mode: 'ok' | 'error' | 'slow' = 'ok'
+const TWO = '<msg>早呀</msg>\n<msg>今天也下雪了</msg>'
+let reply = TWO
+let mode: 'ok' | 'error' | 'slow' | 'cut' = 'ok'
+/** cut 模式：发送到这个字符位置后网络中断 */
+let cutAt = 0
 
 globalThis.fetch = (async (url: string, init: RequestInit) => {
   calls.push({ url, body: JSON.parse(String(init.body)) })
@@ -33,8 +41,13 @@ globalThis.fetch = (async (url: string, init: RequestInit) => {
   const chunks = [...reply].map((ch) => `data: ${JSON.stringify({ choices: [{ delta: { content: ch } }] })}\n\n`)
   const body = new ReadableStream({
     async start(c) {
-      for (const ch of chunks) {
+      for (const [i, ch] of chunks.entries()) {
         if (init.signal?.aborted) return c.error(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        if (mode === 'cut' && i === cutAt) {
+          // 先让读取方取走已经发出的数据（error() 会丢弃队列中尚未读取的部分），再模拟断网
+          await new Promise((r) => setTimeout(r, 60))
+          return c.error(new TypeError('network down'))
+        }
         c.enqueue(enc.encode(ch))
         if (mode === 'slow') await new Promise((r) => setTimeout(r, 30))
       }
@@ -62,8 +75,9 @@ beforeEach(async () => {
   await db.delete()
   await db.open()
   calls = []
-  reply = '早呀\n\n今天也下雪了'
+  reply = TWO
   mode = 'ok'
+  setPaceScaleForTesting(0)
   setViewing(null)
   await setSetting('ai-config', { mode: 'direct', baseUrl: 'https://api.test/v1', apiKey: 'sk-x', proxyUrl: '', proxyToken: '', model: 'test-model', temperature: 0.7, maxTokens: 200 })
   await setSetting('profile', { nickname: '小雪', signature: '' })
@@ -143,21 +157,22 @@ test('重新生成：保留旧版本、上下文排除旧版本、可切换版�
   await sendUserMessage(convId, '然后呢')
   await runReply(convId)
   const last = calls[calls.length - 1].body.messages.slice(1)
-  assert.deepEqual(last.map((m) => m.content), ['你好', '早呀\n\n今天也下雪了', '然后呢'])
+  assert.deepEqual(last.map((m) => m.content), ['你好', '<msg>早呀</msg>\n<msg>今天也下雪了</msg>', '然后呢'])
 })
 
 test('停止生成：保留已生成的部分；什么都没生成则不写入', async () => {
-  reply = '这是一段比较长的回复用来测试停止'
+  reply = '<msg>这是一段比较长的回复用来测试停止'
   mode = 'slow'
   await sendUserMessage(convId, '说点什么')
   const p = runReply(convId)
-  await wait(200)
+  await wait(320)
   stopReply(convId)
   await p
   const msgs = await active()
   const ai = msgs.filter((m) => m.senderType === 'character')
   assert.equal(ai.length, 1)
-  assert.ok(ai[0].content.length > 0 && ai[0].content.length < reply.length)
+  assert.ok(ai[0].content.length > 0 && ai[0].content.length < reply.length - 5)
+  assert.ok(!ai[0].content.includes('<msg'))
   assert.equal(getReplyState(convId).status, 'idle')
 })
 
@@ -219,4 +234,126 @@ test('切换服务不会删除聊天记录', async () => {
   await setSetting('ai-config', { service: 'lingling' })
   await setSetting('ai-config', { service: 'custom', mode: 'direct', baseUrl: 'https://api.test/v1', apiKey: 'sk-x', proxyUrl: '', proxyToken: '', model: 'test-model', temperature: 0.7, maxTokens: 200 })
   assert.equal((await active()).length, before)
+})
+
+/* ---------------- 自然多消息 ---------------- */
+
+test('模型没有按格式输出：回退为一条普通文字消息（不拆分、不丢内容）', async () => {
+  reply = '阿玲：今天雪很大。\n\n记得多穿一点。'
+  await sendUserMessage(convId, '外面冷吗')
+  await runReply(convId)
+  const ai = (await active()).filter((m) => m.senderType === 'character')
+  assert.deepEqual(ai.map((m) => m.content), ['今天雪很大。\n\n记得多穿一点。'])
+})
+
+test('逐条发出：第一条写完就先保存，不必等整段生成结束；节奏按长度等待', async () => {
+  setPaceScaleForTesting(0.05)
+  mode = 'slow'
+  reply = '<msg>哈哈哈</msg><msg>真的吗！</msg><msg>太好了</msg>'
+  await sendUserMessage(convId, '我考过啦')
+  const p = runReply(convId)
+  // 第一条 "<msg>哈哈哈</msg>" 共 14 个字符，约 0.42 秒后写完；整段约 1.4 秒
+  await wait(640)
+  const early = (await active()).filter((m) => m.senderType === 'character')
+  assert.equal(early.length, 1)
+  assert.equal(early[0].content, '哈哈哈')
+  assert.equal(getReplyState(convId).status, 'generating')
+  await p
+  const ai = (await active()).filter((m) => m.senderType === 'character')
+  assert.deepEqual(ai.map((m) => m.content), ['哈哈哈', '真的吗！', '太好了'])
+  // 时间依次递增，同一组
+  assert.ok(ai[0].createdAt < ai[1].createdAt && ai[1].createdAt < ai[2].createdAt)
+  assert.equal(new Set(ai.map((m) => m.replyGroupId)).size, 1)
+})
+
+test('最多 5 条：多出的文字并入第 5 条', async () => {
+  reply = Array.from({ length: 7 }, (_, i) => `<msg>${i + 1}</msg>`).join('')
+  await sendUserMessage(convId, '数数')
+  await runReply(convId)
+  const ai = (await active()).filter((m) => m.senderType === 'character')
+  assert.deepEqual(ai.map((m) => m.content), ['1', '2', '3', '4', '5\n6\n7'])
+})
+
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+
+test('表情包：AI 只能发送已注册的表情包；编造的编号被丢弃', async () => {
+  const happy = await addSticker({ dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68 }, '开心转圈')
+  await addSticker({ dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68 }, '') // 没有含义：不提供给 AI
+  reply = '<msg>太棒了</msg><sticker id="k1"/><sticker id="k9"/><sticker id="stk_fake"/>'
+  await sendUserMessage(convId, '我拿到 offer 了')
+  await runReply(convId)
+  const sys = calls[0].body.messages[0].content
+  assert.match(sys, /可用表情包：k1=开心转圈$/m)
+  const ai = (await active()).filter((m) => m.senderType === 'character')
+  assert.deepEqual(ai.map((m) => [m.kind, m.stickerId ?? m.content]), [
+    ['text', '太棒了'],
+    ['sticker', happy.id],
+  ])
+  assert.equal((await db.conversations.get(convId))!.lastMessagePreview, '[表情包]')
+})
+
+test('表情包频率「从不」：不向模型提供表情包，输出中的表情包标记一律丢弃', async () => {
+  await addSticker({ dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68 }, '开心')
+  await updateCharacter(charId, { ...(await db.characters.get(charId))!, chatStyle: { stickers: 'never' } })
+  reply = '<msg>嗯</msg><sticker id="k1"/>'
+  await sendUserMessage(convId, '你好')
+  await runReply(convId)
+  assert.doesNotMatch(calls[0].body.messages[0].content, /表情包/)
+  const ai = (await active()).filter((m) => m.senderType === 'character')
+  assert.deepEqual(ai.map((m) => m.kind), ['text'])
+})
+
+test('用户发送的表情包：保存为表情包消息，并以含义进入上下文', async () => {
+  const st = await addSticker({ dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68 }, '委屈')
+  await sendUserSticker(convId, st)
+  await runReply(convId)
+  const msgs = await active()
+  assert.equal(msgs[0].kind, 'sticker')
+  assert.equal(msgs[0].stickerId, st.id)
+  assert.deepEqual(calls[0].body.messages.slice(1), [{ role: 'user', content: '[发来一个表情包：委屈]' }])
+})
+
+test('中途断网：已写完的消息保留；重试不会重复保存，模型能看到已发出的内容', async () => {
+  reply = '<msg>第一条</msg><msg>第二条还没写完'
+  mode = 'cut'
+  cutAt = 20
+  await sendUserMessage(convId, '在吗')
+  await runReply(convId)
+  assert.equal(getReplyState(convId).status, 'error')
+  assert.equal(getReplyState(convId).errorKind, 'network')
+  let ai = (await active()).filter((m) => m.senderType === 'character')
+  assert.deepEqual(ai.map((m) => m.content), ['第一条'])
+  // 重试
+  mode = 'ok'
+  reply = '<msg>刚才断了一下</msg>'
+  await runReply(convId)
+  ai = (await active()).filter((m) => m.senderType === 'character')
+  assert.deepEqual(ai.map((m) => m.content), ['第一条', '刚才断了一下'])
+  assert.equal(new Set(ai.map((m) => m.id)).size, ai.length)
+  assert.match(calls[1].body.messages.at(-1)!.content, /<msg>第一条<\/msg>/)
+})
+
+test('同一条回复重复保存只会有一条（ID 由回复 ID + 序号决定）', async () => {
+  const part = { type: 'text' as const, text: '你好' }
+  await savePart({ convId, runId: 'grp_x', index: 0, part, characterId: charId, model: 'm' })
+  await savePart({ convId, runId: 'grp_x', index: 0, part, characterId: charId, model: 'm' })
+  const ai = (await db.messages.where('conversationId').equals(convId).toArray()).filter((m) => m.senderType === 'character')
+  assert.equal(ai.length, 1)
+  assert.equal(ai[0].id, 'grp_x-0')
+  assert.equal((await db.conversations.get(convId))!.unread, 1)
+})
+
+test('「刷新」后（重新打开数据库）消息与表情包仍然存在', async () => {
+  const st = await addSticker({ dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68 }, '晚安')
+  await sendUserSticker(convId, st)
+  reply = '<msg>晚安</msg><sticker id="k1"/>'
+  await runReply(convId)
+  const fresh = new LinglingDB()
+  await fresh.open()
+  const msgs = (await fresh.messages.where('conversationId').equals(convId).sortBy('createdAt')).filter((m) => !m.deleted && !m.superseded)
+  assert.deepEqual(msgs.map((m) => m.kind), ['sticker', 'text', 'sticker'])
+  const saved = await fresh.stickers.get(st.id)
+  assert.equal(saved?.dataUrl, PNG)
+  assert.equal(saved?.name, '晚安')
+  fresh.close()
 })

@@ -63,7 +63,8 @@ test('历史：排除已删除与被替换的版本，合并相邻同一方消�
   const ctx = buildContext({ character: char, userName: '我', lorebooks: [], history })
   assert.deepEqual(ctx.messages.slice(1), [
     { role: 'user', content: '早' },
-    { role: 'assistant', content: '早呀\n\n今天也下雪了' },
+    // 角色的多条消息按消息格式写回上下文，帮助模型保持格式
+    { role: 'assistant', content: '<msg>早呀</msg>\n<msg>今天也下雪了</msg>' },
     { role: 'user', content: '要出去走走吗' },
   ])
   const long = Array.from({ length: 50 }, (_, i) => msg(i % 2 ? 'character' : 'user', '雪'.repeat(300)))

@@ -5,8 +5,13 @@
  *  - 已删除、被重新生成替换（superseded）的消息不进入上下文
  *  - 示例对话只作为语气参考，明确告知模型它不是真实发生过的对话
  */
-import type { Character, Lorebook, LoreEntry, Message, World } from '../../db/schema'
+import type { Character, Lorebook, LoreEntry, Message, Sticker, World } from '../../db/schema'
 import type { ChatTurn } from './provider'
+import { renderAssistantTurn, type ReplyPart } from './messageFormat'
+import { formatSection, stickerFrequency, styleSection, type StickerOption } from './style'
+
+/** 一次最多向模型提供多少个表情包（控制 Token） */
+export const MAX_OFFERED_STICKERS = 24
 
 export interface ContextBudget {
   /** 聊天历史的最大字数（从最新往前取） */
@@ -29,6 +34,8 @@ export interface ContextInput {
   lorebooks: Lorebook[]
   /** 本会话全部消息（按时间升序） */
   history: Message[]
+  /** 用户的表情包收藏（用于提供给 AI 选择，以及把历史中的表情包写进上下文） */
+  stickers?: Sticker[]
   budget?: Partial<ContextBudget>
 }
 
@@ -37,6 +44,23 @@ export interface BuiltContext {
   /** 实际注入的世界书条目名称（用于界面提示与调试） */
   usedEntries: string[]
   historyCount: number
+  /** 本次允许 AI 使用的表情包：短编号 → 真实 ID（解析回复时据此校验） */
+  stickerMap: Map<string, string>
+}
+
+/** 可以提供给 AI 的表情包：有含义描述、允许 AI 使用；常用的优先 */
+export function offeredStickers(stickers: Sticker[]): { options: StickerOption[]; map: Map<string, string> } {
+  const usable = stickers
+    .filter((s) => s.aiUsable && s.name.trim())
+    .sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.createdAt - a.createdAt)
+    .slice(0, MAX_OFFERED_STICKERS)
+  const map = new Map<string, string>()
+  const options = usable.map((s, i) => {
+    const alias = `k${i + 1}`
+    map.set(alias, s.id)
+    return { alias, name: s.name.trim().slice(0, 20) }
+  })
+  return { options, map }
 }
 
 function macros(text: string, char: string, user: string): string {
@@ -92,7 +116,8 @@ export function buildContext(input: ContextInput): BuiltContext {
   const entries = triggeredEntries(input.lorebooks, recent, budget.loreChars)
 
   const parts: string[] = [
-    `你是「${name}」，正在一款私人聊天软件里和「${user}」聊天。请始终以${name}的身份、用第一人称自然地回复。不要提及自己是 AI、模型或程序，不要替${user}说话或描写${user}的行为。`,
+    `你是「${name}」，正在一款聊天软件里和「${user}」聊天。请以${name}的身份、用第一人称自然地回复，不要替${user}说话或描写${user}的行为。` +
+      `平时不必主动谈论技术细节；但如果${user}认真地问你是不是真人，要诚实说明你是 AI 扮演的角色。不要刻意让${user}依赖你，也不要劝${user}疏远现实中的人。`,
   ]
   const field = (label: string, v: string) => v && parts.push(`【${label}】\n${v}`)
   field('角色简介', m(c.bio))
@@ -111,10 +136,14 @@ export function buildContext(input: ContextInput): BuiltContext {
   if (c.exampleDialogue?.trim()) {
     parts.push(`【说话示例】（仅用于参考语气，不是你们真实发生过的对话，不要当作记忆）\n${clip(m(c.exampleDialogue), 1500)}`)
   }
-  parts.push(
-    `【回复方式】像真人用手机发消息：通常 1～4 条简短消息，每条之间空一行。不要使用旁白、括号动作描写或 Markdown 标题。` +
-      `只依据以上设定和下面真实发生过的聊天内容回应，不要编造你们没有共同经历过的事情；不确定时可以自然地询问。`,
-  )
+  const exchanges = active.filter((x) => x.senderType === 'user').length
+  parts.push(styleSection(c, exchanges, user))
+  const freq = stickerFrequency(c)
+  const offered = freq === 'never' ? { options: [], map: new Map<string, string>() } : offeredStickers(input.stickers ?? [])
+  parts.push(formatSection(freq, offered.options))
+  parts.push('只依据以上设定和下面真实发生过的聊天内容回应，不要编造你们没有共同经历过的事情；不确定时可以自然地询问。')
+  const stickerName = new Map((input.stickers ?? []).map((st) => [st.id, st.name.trim()]))
+  const aliasOf = new Map([...offered.map].map(([a, id]) => [id, a]))
 
   // 聊天历史：从最新往前，直到超出字数预算（至少保留最后一条）
   const picked: Message[] = []
@@ -126,19 +155,41 @@ export function buildContext(input: ContextInput): BuiltContext {
     used += len
   }
 
-  // 相邻的同一方消息合并为一轮（与模型输出的「空行分隔多条消息」对应）
-  const turns: ChatTurn[] = []
+  // 相邻的同一方消息合并为一轮：用户的多条用空行分隔；角色的多条按消息格式写回，帮助模型保持格式
+  const turns: { role: 'user' | 'assistant'; items: Message[] }[] = []
   for (const msg of picked) {
     const role = msg.senderType === 'user' ? 'user' : 'assistant'
     const last = turns[turns.length - 1]
-    if (last && last.role === role) last.content += `\n\n${msg.content}`
-    else turns.push({ role, content: msg.content })
+    if (last && last.role === role) last.items.push(msg)
+    else turns.push({ role, items: [msg] })
   }
+  const chat: ChatTurn[] = turns
+    .map((t): ChatTurn => {
+      if (t.role === 'user') {
+        const content = t.items
+          .map((x) => (x.kind === 'sticker' ? `[发来一个表情包${stickerName.get(x.stickerId ?? '') ? `：${stickerName.get(x.stickerId ?? '')}` : ''}]` : x.content))
+          .join('\n\n')
+        return { role: 'user', content }
+      }
+      const items: ReplyPart[] = t.items.map((x) =>
+        x.kind === 'sticker' && x.stickerId ? { type: 'sticker', stickerId: x.stickerId } : { type: 'text', text: x.content },
+      )
+      return { role: 'assistant', content: renderAssistantTurn(items, (id) => aliasOf.get(id)) }
+    })
+    .filter((t) => t.content.trim())
+    // 去掉空的一轮后，可能出现相邻同一方，再合并一次
+    .reduce<ChatTurn[]>((acc, t) => {
+      const prev = acc[acc.length - 1]
+      if (prev && prev.role === t.role) prev.content += t.role === 'user' ? `\n\n${t.content}` : `\n${t.content}`
+      else acc.push({ ...t })
+      return acc
+    }, [])
 
   return {
-    messages: [{ role: 'system', content: parts.join('\n\n') }, ...turns],
+    messages: [{ role: 'system', content: parts.join('\n\n') }, ...chat],
     usedEntries: entries.map((e) => e.name),
     historyCount: picked.length,
+    stickerMap: offered.map,
   }
 }
 

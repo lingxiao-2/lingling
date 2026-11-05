@@ -17,7 +17,7 @@ export type CharacterInput = Pick<
   Character,
   'name' | 'avatar' | 'bio' | 'personality' | 'speakingStyle' | 'backstory' | 'relationToUser'
 > &
-  Partial<Pick<Character, 'greeting' | 'exampleDialogue' | 'worldId'>>
+  Partial<Pick<Character, 'greeting' | 'exampleDialogue' | 'worldId' | 'chatStyle'>>
 
 /* ---------- 角色 ---------- */
 export async function createCharacter(input: CharacterInput): Promise<Character> {

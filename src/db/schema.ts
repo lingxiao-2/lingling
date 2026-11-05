@@ -13,6 +13,20 @@ export interface CharacterPermissions {
   postMoments: boolean
 }
 
+/** 角色的聊天表达偏好（V0.3 起，全部可选）。只影响「怎么说」，不覆盖角色卡的人设 */
+export interface ChatStyle {
+  /** 话量：少 / 适中 / 多 */
+  verbosity?: 'low' | 'medium' | 'high'
+  /** 表达风格；为空表示完全按人设 */
+  tone?: '' | 'concise' | 'lively' | 'gentle' | 'cool' | 'playful'
+  /** 表情包使用频率 */
+  stickers?: 'never' | 'sometimes' | 'often'
+  /** 语言特点（用户自由填写），例如口头禅、标点习惯 */
+  quirks?: string
+  /** 关系亲密程度；auto 表示结合角色设定与实际聊天积累 */
+  closeness?: 'auto' | 'distant' | 'friendly' | 'close'
+}
+
 export interface Character {
   id: string
   name: string
@@ -31,6 +45,8 @@ export interface Character {
   greeting?: string
   /** 示例对话（V2 起）。只是角色设定，不写入聊天记录，也不进入记忆 */
   exampleDialogue?: string
+  /** 聊天表达偏好（可选） */
+  chatStyle?: ChatStyle
   /** 导入时无法映射的原始字段，原样保留（V2 起） */
   extensions?: Record<string, unknown>
   /** 导入来源（V2 起） */
@@ -69,8 +85,10 @@ export interface Message {
   senderType: 'user' | 'character' | 'system'
   /** 角色消息为 characterId；用户消息为 'user' */
   senderId: string
-  kind: 'text'
+  /** text：文字；sticker：表情包（stickerId 指向本机表情包，content 保存「[表情包] 含义」作为预览与兼容文本） */
+  kind: 'text' | 'sticker'
   content: string
+  stickerId?: string
   status: MessageStatus
   /** 引用回复（V0.1 后续轮次实现 UI） */
   replyToId?: string
@@ -129,13 +147,27 @@ export interface Moment {
   createdAt: number
 }
 
+/**
+ * 表情包：用户自己从相册或文件添加，保存在本机 IndexedDB，不上传到任何服务器。
+ * 图片以 dataURL 保存（PNG / JPEG / WebP / GIF，已校验文件头并限制大小）。
+ */
 export interface Sticker {
   id: string
+  /** 目前只有用户自己的收藏：'mine' */
   packId: string
+  /** 含义 / 描述，例如「开心转圈」。为空时 AI 不会使用它（AI 需要靠描述判断何时合适） */
   name: string
-  blobRef: string
+  dataUrl: string
+  mime: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
+  width: number
+  height: number
+  bytes: number
+  /** 常用：排在最前 */
   favorite: boolean
+  /** 是否允许 AI 角色使用（需要同时填写含义） */
+  aiUsable: boolean
   createdAt: number
+  updatedAt: number
 }
 
 /**

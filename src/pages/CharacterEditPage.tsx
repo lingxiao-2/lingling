@@ -7,10 +7,35 @@ import Avatar from '../components/Avatar'
 import { AreaField, PrimaryButton, Section, TextField } from '../components/ui'
 import { db } from '../db/db'
 import { DEFAULT_WORLD_ID } from '../db/schema'
-import type { World } from '../db/schema'
+import type { ChatStyle, World } from '../db/schema'
+import { CLOSENESS_LABEL, STICKER_LABEL, TONE_LABEL, VERBOSITY_LABEL } from '../services/ai/style'
 import { createCharacter, updateCharacter } from '../db/repo'
 import type { CharacterInput } from '../db/repo'
 import { imageToAvatar } from '../lib/util'
+
+/** 一行可选项：细描边小胶囊 */
+function Choice<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void }) {
+  return (
+    <div className="px-4 py-2.5">
+      <div className="text-[12px] tracking-wide text-[var(--c-text-2)] mb-1.5">{label}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={value === v}
+            onClick={() => onChange(v)}
+            className={`press h-7 px-3 rounded-full border text-[12.5px] ${
+              value === v ? 'border-[var(--c-accent)] bg-[var(--c-accent)]/10 text-[var(--c-accent-strong)]' : 'border-[var(--c-line)] bg-white/40 text-[var(--c-text-2)]'
+            }`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 const EMPTY: CharacterInput = {
   name: '',
@@ -88,11 +113,15 @@ export default function CharacterEditPage() {
       greeting: existing.greeting ?? '',
       exampleDialogue: existing.exampleDialogue ?? '',
       worldId: existing.worldId,
+      chatStyle: existing.chatStyle,
     })
   }, [existing])
 
   const set = <K extends keyof CharacterInput>(k: K, v: CharacterInput[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
+
+  const style: ChatStyle = form.chatStyle ?? {}
+  const setStyle = (patch: ChatStyle) => setForm((f) => ({ ...f, chatStyle: { ...(f.chatStyle ?? {}), ...patch } }))
 
   const pick = async (file?: File) => {
     if (!file) return
@@ -118,6 +147,7 @@ export default function CharacterEditPage() {
       greeting: (form.greeting ?? '').trim(),
       exampleDialogue: (form.exampleDialogue ?? '').trim(),
       worldId: form.worldId || DEFAULT_WORLD_ID,
+      chatStyle: form.chatStyle ? { ...form.chatStyle, quirks: (form.chatStyle.quirks ?? '').trim() } : undefined,
     }
     if (id) {
       await updateCharacter(id, data)
@@ -188,6 +218,45 @@ export default function CharacterEditPage() {
           <AreaField label="性格设定" rows={3} value={form.personality} onChange={(e) => set('personality', e.target.value)} placeholder="性格、喜好、价值观……" />
           <AreaField label="说话风格" rows={3} value={form.speakingStyle} onChange={(e) => set('speakingStyle', e.target.value)} placeholder="语气、口头禅、用词习惯……" />
           <AreaField label="背景故事" rows={5} value={form.backstory} onChange={(e) => set('backstory', e.target.value)} placeholder="TA 的经历与所处的世界" />
+        </Section>
+
+        <Section title="聊天风格（可选）">
+          <p className="px-4 pt-3 text-[11.5px] leading-relaxed text-[var(--c-text-3)]">
+            只影响 TA 在聊天里怎么说话，不会改动上面的人设；和人设冲突时以人设为准。
+          </p>
+          <Choice
+            label="话量"
+            value={style.verbosity ?? 'medium'}
+            options={(['low', 'medium', 'high'] as const).map((v) => [v, VERBOSITY_LABEL[v]])}
+            onChange={(v) => setStyle({ verbosity: v })}
+          />
+          <Choice
+            label="表达风格"
+            value={style.tone ?? ''}
+            options={[['', '跟随人设'], ...(['concise', 'lively', 'gentle', 'cool', 'playful'] as const).map((v): ['concise' | 'lively' | 'gentle' | 'cool' | 'playful', string] => [v, TONE_LABEL[v]])]}
+            onChange={(v) => setStyle({ tone: v })}
+          />
+          <Choice
+            label="表情包"
+            value={style.stickers ?? (existing?.permissions?.useStickers === false ? 'never' : 'sometimes')}
+            options={(['never', 'sometimes', 'often'] as const).map((v) => [v, STICKER_LABEL[v]])}
+            onChange={(v) => setStyle({ stickers: v })}
+          />
+          <Choice
+            label="亲密程度"
+            value={style.closeness ?? 'auto'}
+            options={(['auto', 'distant', 'friendly', 'close'] as const).map((v) => [v, CLOSENESS_LABEL[v]])}
+            onChange={(v) => setStyle({ closeness: v })}
+          />
+          <AreaField
+            label="语言特点"
+            rows={2}
+            value={style.quirks ?? ''}
+            maxLength={300}
+            onChange={(e) => setStyle({ quirks: e.target.value })}
+            placeholder="例如：句尾爱加「啦」；不用感叹号；偶尔夹一句日语"
+            hint="「亲密程度」选自动时，会结合「与你的关系」和你们实际聊了多久来把握分寸。"
+          />
         </Section>
 
         <Section title="开场白与示例对话">
