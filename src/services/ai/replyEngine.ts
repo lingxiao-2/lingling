@@ -1,6 +1,8 @@
 /**
  * 回复引擎：在页面之外维护每个会话的生成状态，离开聊天页后生成也会继续并保存。
  *  - 用户连续发送的消息在 0.8 秒内聚合为一次请求（各自仍是独立的消息记录）
+ *  - 一次模型调用生成 1～5 条消息（见 messageFormat.ts），流式解析：写完一条就按自然节奏发出一条
+ *  - 每条消息的 ID 由「本次回复 ID + 序号」决定，重复保存只会覆盖同一条，不会产生重复消息
  *  - 同一会话同一时间只有一个请求；生成中又有新消息，则在本次完成后再回复一轮
  *  - 重新生成：保留旧版本（superseded），只有当前版本进入后续上下文；可切换版本
  *  - 只在用户发送、重试、重新生成时请求，不会自动发起无上限的请求
@@ -9,17 +11,20 @@ import { useSyncExternalStore } from 'react'
 import { db, DEFAULT_PROFILE } from '../../db/db'
 import { getDeviceId, normalizeAIConfig } from './service'
 import { DEFAULT_WORLD_ID } from '../../db/schema'
-import type { AIConfig, Lorebook, Message, UserProfile } from '../../db/schema'
+import type { AIConfig, Lorebook, Message, Sticker, UserProfile } from '../../db/schema'
 import { uid } from '../../lib/util'
-import { buildContext, splitReply } from './context'
+import { buildContext } from './context'
+import { capParts, MAX_PARTS, parseReply, type ReplyPart } from './messageFormat'
 import { AIError, streamChat } from './openai'
 
 export type ReplyStatus = 'idle' | 'waiting' | 'generating' | 'error'
 
 export interface ReplyState {
   status: ReplyStatus
-  /** 流式生成中的文字 */
+  /** 正在生成、尚未发出的那条文字（已去掉格式标记） */
   partial: string
+  /** 本轮已经发出的条数 */
+  delivered?: number
   error?: string
   errorKind?: AIError['kind']
   /** 正在重新生成的版本家族 */
@@ -31,10 +36,24 @@ const states = new Map<string, ReplyState>()
 const listeners = new Set<() => void>()
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
 const aborts = new Map<string, AbortController>()
+const flushers = new Map<string, () => void>()
 const pendingAgain = new Set<string>()
 let viewing: string | null = null
 
 export const AGGREGATE_MS = 800
+
+/** 逐条发出的节奏：按上一条的长度模拟打字时间（毫秒） */
+export const PACE = { min: 420, perChar: 32, max: 1500, sticker: 650 }
+let paceScale = 1
+/** 仅供测试：0 表示不等待 */
+export function setPaceScaleForTesting(k: number) {
+  paceScale = k
+}
+
+export function paceFor(part: ReplyPart): number {
+  if (part.type === 'sticker') return PACE.sticker * paceScale
+  return Math.min(PACE.max, Math.max(PACE.min, part.text.length * PACE.perChar)) * paceScale
+}
 
 function set(convId: string, s: ReplyState) {
   states.set(convId, s)
@@ -83,6 +102,7 @@ export function scheduleReply(convId: string) {
   )
 }
 
+/** 停止：中断请求；已经写完的消息立即全部发出（不再等待节奏），未写完的一条也保留 */
 export function stopReply(convId: string) {
   const t = timers.get(convId)
   if (t) {
@@ -92,6 +112,7 @@ export function stopReply(convId: string) {
   }
   pendingAgain.delete(convId)
   aborts.get(convId)?.abort()
+  flushers.get(convId)?.()
 }
 
 export function dismissError(convId: string) {
@@ -117,8 +138,53 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
   if (getReplyState(convId).status === 'generating') return
   const ctrl = new AbortController()
   aborts.set(convId, ctrl)
-  set(convId, { status: 'generating', partial: '', regenerating: regenerateFamily })
-  let partial = ''
+  set(convId, { status: 'generating', partial: '', delivered: 0, regenerating: regenerateFamily })
+
+  // 本轮回复的 ID：每条消息的 ID = runId-序号，重复写入只会覆盖同一条
+  const runId = uid('grp')
+  let raw = ''
+  let ready: ReplyPart[] = []
+  let finalParts: ReplyPart[] | null = null
+  let delivered = 0
+  let current = ''
+  let flushing = false
+  let wake: () => void = () => {}
+  let pump: Promise<void> = Promise.resolve()
+  let save: ((part: ReplyPart, index: number) => Promise<void>) | null = null
+  flushers.set(convId, () => {
+    flushing = true
+    wake()
+  })
+
+  const publish = () =>
+    set(convId, { status: 'generating', partial: current, delivered, regenerating: regenerateFamily })
+
+  /** 等待节奏；停止时立即醒来 */
+  const sleep = (ms: number) =>
+    new Promise<void>((resolve) => {
+      if (flushing || ms <= 0) return resolve()
+      const t = setTimeout(resolve, ms)
+      wake = () => {
+        clearTimeout(t)
+        resolve()
+      }
+    })
+
+  /** 把已经完整的消息按顺序发出；流式过程中最多先发 4 条，第 5 条及之后等结束后合并 */
+  const deliver = () => {
+    pump = pump.then(async () => {
+      for (;;) {
+        const list = finalParts ?? ready.slice(0, MAX_PARTS - 1)
+        if (delivered >= list.length || !save) return
+        if (delivered > 0) await sleep(paceFor(list[delivered - 1]))
+        await save(list[delivered], delivered)
+        delivered++
+        publish()
+      }
+    })
+    return pump
+  }
+
   try {
     const conv = await db.conversations.get(convId)
     if (!conv) return set(convId, IDLE)
@@ -130,6 +196,7 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
     const charBookIds = (await db.characterLorebooks.where('characterId').equals(character.id).toArray()).map((l) => l.lorebookId)
     const worldBookIds = world ? (await db.worldLorebooks.where('worldId').equals(world.id).toArray()).map((l) => l.lorebookId) : []
     const books = (await db.lorebooks.bulkGet([...new Set([...charBookIds, ...worldBookIds])])).filter((b): b is Lorebook => !!b)
+    const stickers: Sticker[] = await db.stickers.toArray()
     let history = await db.messages.where('conversationId').equals(convId).sortBy('createdAt')
     if (regenerateFamily) {
       // 重新生成：上下文中排除当前版本
@@ -137,33 +204,54 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
     }
     if (!history.some((m) => m.senderType === 'user' && !m.deleted)) return set(convId, IDLE)
 
-    const ctx = buildContext({ character, userName: profile.nickname, world, lorebooks: books, history })
-    const text = await streamChat({
-      config,
-      messages: ctx.messages,
-      signal: ctrl.signal,
-      deviceId: config.service === 'lingling' ? await getDeviceId() : '',
-      onDelta: (full) => {
-        partial = full
-        set(convId, { status: 'generating', partial: full, regenerating: regenerateFamily })
-      },
-    })
-    await saveReply(convId, character.id, character.name, text, config.model, regenerateFamily)
+    const ctx = buildContext({ character, userName: profile.nickname, world, lorebooks: books, history, stickers })
+    const stickerNames = new Map(stickers.map((st) => [st.id, st.name.trim()]))
+    save = (part, index) => savePart({ convId, runId, index, part, characterId: character.id, model: config.model, family: regenerateFamily, stickerName: stickerNames.get(part.type === 'sticker' ? part.stickerId : '') })
+
+    const parse = (final: boolean) => parseReply(raw, ctx.stickerMap, final, character.name)
+    try {
+      raw = await streamChat({
+        config,
+        messages: ctx.messages,
+        signal: ctrl.signal,
+        deviceId: config.service === 'lingling' ? await getDeviceId() : '',
+        onDelta: (full) => {
+          raw = full
+          const p = parse(false)
+          ready = p.parts
+          current = p.current
+          publish()
+          if (ready.length > delivered) void deliver()
+        },
+      })
+    } catch (e) {
+      if (e instanceof AIError && e.kind === 'aborted') {
+        // 手动停止：已写完的消息和正在写的那一条都保留，立即发出
+        flushing = true
+        finalParts = capParts(parse(true).parts)
+        current = ''
+        await deliver()
+        return set(convId, IDLE)
+      }
+      // 出错：已经写完的消息照常保存（它们是完整的），未写完的一条丢弃；重试时模型能看到已发出的内容
+      flushing = true
+      finalParts = capParts(ready)
+      current = ''
+      await deliver()
+      throw e
+    }
+    finalParts = capParts(parse(true).parts)
+    current = ''
+    publish()
+    await deliver()
+    if (delivered === 0) throw new AIError('模型没有返回可以显示的内容，请重试或更换模型', 'empty')
     set(convId, IDLE)
   } catch (e) {
     const err = e instanceof AIError ? e : new AIError(e instanceof Error ? e.message : String(e), 'other')
-    if (err.kind === 'aborted') {
-      // 手动停止：已生成的部分照常保存，没有内容则什么也不写
-      const conv = await db.conversations.get(convId)
-      const character = conv ? await db.characters.get(conv.characterIds[0]) : undefined
-      const cfg = await loadConfig()
-      if (partial.trim() && character) await saveReply(convId, character.id, character.name, partial, cfg.model, regenerateFamily)
-      set(convId, IDLE)
-    } else {
-      set(convId, { status: 'error', partial: '', error: err.message, errorKind: err.kind, regenerating: regenerateFamily })
-    }
+    set(convId, { status: 'error', partial: '', error: err.message, errorKind: err.kind, regenerating: delivered > 0 ? undefined : regenerateFamily })
   } finally {
     aborts.delete(convId)
+    flushers.delete(convId)
     if (pendingAgain.has(convId)) {
       pendingAgain.delete(convId)
       if (getReplyState(convId).status !== 'error') scheduleReply(convId)
@@ -171,43 +259,52 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
   }
 }
 
-async function saveReply(convId: string, characterId: string, name: string, text: string, model: string, family?: string) {
-  const parts = splitReply(text, name)
-  if (!parts.length) return
-  const groupId = uid('grp')
-  const now = Date.now()
+interface SavePartInput {
+  convId: string
+  runId: string
+  index: number
+  part: ReplyPart
+  characterId: string
+  model: string
+  family?: string
+  stickerName?: string
+}
+
+/** 保存一条回复。ID 固定为 runId-序号：同一条重复保存只会覆盖，不会重复 */
+export async function savePart({ convId, runId, index, part, characterId, model, family, stickerName }: SavePartInput) {
+  const id = `${runId}-${index}`
   await db.transaction('rw', [db.messages, db.conversations], async () => {
-    if (family) {
+    if (await db.messages.get(id)) return
+    if (index === 0 && family) {
       const old = (await db.messages.where('conversationId').equals(convId).toArray()).filter(
-        (m) => (m.versionFamily ?? m.replyGroupId) === family && !m.superseded,
+        (m) => (m.versionFamily ?? m.replyGroupId) === family && !m.superseded && m.replyGroupId !== runId,
       )
       for (const m of old) await db.messages.update(m.id, { superseded: true, versionFamily: family })
     }
-    let t = now
-    for (const content of parts) {
-      await db.messages.add({
-        id: uid('msg'),
-        conversationId: convId,
-        senderType: 'character',
-        senderId: characterId,
-        kind: 'text',
-        content,
-        status: 'sent',
-        replyGroupId: groupId,
-        versionFamily: family ?? groupId,
-        model,
-        createdAt: t,
-        updatedAt: t,
-      })
-      t += 1
-    }
     const conv = await db.conversations.get(convId)
+    const t = Math.max(Date.now(), (conv?.lastMessageAt ?? 0) + 1)
+    const content = part.type === 'text' ? part.text : `[表情包]${stickerName ? ` ${stickerName}` : ''}`
+    await db.messages.add({
+      id,
+      conversationId: convId,
+      senderType: 'character',
+      senderId: characterId,
+      kind: part.type,
+      content,
+      stickerId: part.type === 'sticker' ? part.stickerId : undefined,
+      status: 'sent',
+      replyGroupId: runId,
+      versionFamily: family ?? runId,
+      model,
+      createdAt: t,
+      updatedAt: t,
+    })
     if (conv) {
-      const last = parts[parts.length - 1].replace(/\s+/g, ' ')
+      const preview = part.type === 'text' ? part.text.replace(/\s+/g, ' ') : '[表情包]'
       await db.conversations.update(convId, {
-        lastMessagePreview: last.length > 40 ? `${last.slice(0, 40)}…` : last,
+        lastMessagePreview: preview.length > 40 ? `${preview.slice(0, 40)}…` : preview,
         lastMessageAt: t,
-        unread: viewing === convId ? 0 : conv.unread + parts.length,
+        unread: viewing === convId ? 0 : conv.unread + 1,
       })
     }
   })
