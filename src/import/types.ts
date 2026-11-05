@@ -20,6 +20,13 @@ export interface CharacterDraft {
   exampleDialogue: string
   /** 无法映射到上述字段的原始数据，原样保留 */
   extensions: Extensions
+  /** 文档中无法归入上述字段的章节：原文完整保留（作为扩展资料，按需进入 AI 上下文） */
+  extras?: ProfileExtra[]
+}
+
+export interface ProfileExtra {
+  label: string
+  text: string
 }
 
 export interface LoreEntryDraft {
@@ -58,13 +65,16 @@ export type CharacterFieldKey =
   | 'greeting'
   | 'exampleDialogue'
 
-export type SectionTarget = CharacterFieldKey | 'ignore'
+/** extra：其他设定（无法归类，原文完整保留）；ignore：用户明确选择不保存 */
+export type SectionTarget = CharacterFieldKey | 'extra' | 'ignore'
 
 /** TXT / Markdown 文件拆出的段落，用户在预览里决定它属于哪个字段 */
 export interface TextSection {
   label: string
   text: string
   target: SectionTarget
+  /** 归属是按标题自动识别的（用于预览中的提示） */
+  auto?: boolean
 }
 
 export type ImportFormat =
@@ -88,6 +98,8 @@ export interface ParsedFile {
   warnings: string[]
   /** 仅 TXT / Markdown 角色：可重新分配的段落；characters[0] 由它生成 */
   sections?: TextSection[]
+  /** 仅文本类角色文档：角色名称候选与是否有把握（没把握时请用户确认） */
+  nameCheck?: { confident: boolean; candidates: string[]; source: string }
   /** 仅「世界」导入模式：文件中的世界设定 */
   world?: WorldDraft
   /** 文件来源（PNG 角色卡、CharX、ZIP 内文件、DOCX、PDF、YAML…），用于预览中的说明 */
@@ -101,6 +113,8 @@ export interface ParsedFile {
     rawText: string
     encoding?: string
     pages?: number
+    /** 提取出的段落数（DOCX） */
+    paragraphs?: number
   }
 }
 
@@ -159,6 +173,7 @@ export function emptyCharacterDraft(): CharacterDraft {
     greeting: '',
     exampleDialogue: '',
     extensions: {},
+    extras: [],
   }
 }
 

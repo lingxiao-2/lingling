@@ -17,7 +17,7 @@ export type CharacterInput = Pick<
   Character,
   'name' | 'avatar' | 'bio' | 'personality' | 'speakingStyle' | 'backstory' | 'relationToUser'
 > &
-  Partial<Pick<Character, 'greeting' | 'exampleDialogue' | 'worldId' | 'chatStyle'>>
+  Partial<Pick<Character, 'greeting' | 'exampleDialogue' | 'worldId' | 'chatStyle' | 'profileExtras' | 'sourceDoc'>>
 
 /* ---------- 角色 ---------- */
 export async function createCharacter(input: CharacterInput): Promise<Character> {
@@ -292,6 +292,17 @@ export interface ImportCharacterPlan {
   /** 头像（压缩后的 dataURL），例如 PNG 角色卡图片本身 */
   avatar?: string
   source: Omit<ImportSource, 'importedAt'>
+  /** 从文档导入时的全文（保存后可核对，不直接发送给模型） */
+  sourceDoc?: Character['sourceDoc']
+}
+
+/** 保存后读回的内容明显少于预览中的内容时抛出：整个导入回滚，不显示成功 */
+export class ImportIntegrityError extends Error {}
+
+/** 角色资料的可见字符数（不含名称和空白） */
+export function characterTextChars(c: Pick<Character, 'bio' | 'personality' | 'speakingStyle' | 'backstory' | 'relationToUser' | 'greeting' | 'exampleDialogue' | 'profileExtras'>): number {
+  const fields = [c.bio, c.personality, c.speakingStyle, c.backstory, c.relationToUser, c.greeting ?? '', c.exampleDialogue ?? '']
+  return (fields.join('') + (c.profileExtras ?? []).map((e) => e.text).join('')).replace(/\s/g, '').length
 }
 
 export interface ImportLorebookPlan {
@@ -367,6 +378,8 @@ export async function saveImport(
         greeting: d.greeting.trim(),
         exampleDialogue: d.exampleDialogue.trim(),
         extensions: d.extensions,
+        profileExtras: (d.extras ?? []).filter((e) => e.text.trim()).map((e) => ({ label: e.label.trim() || '其他设定', text: e.text.trim() })),
+        sourceDoc: plan.sourceDoc,
         importSource: { ...plan.source, importedAt: now },
         worldId: worldId ?? DEFAULT_WORLD_ID,
         permissions: { useStickers: true, postMoments: true },
@@ -374,6 +387,13 @@ export async function saveImport(
         updatedAt: now,
       }
       await db.characters.add(c)
+      // 读回核对：保存后的文字明显少于预览中的内容，说明写入出了问题——回滚整个导入，不显示成功
+      const expected = characterTextChars(c)
+      const back = await db.characters.get(c.id)
+      const got = back ? characterTextChars(back) : 0
+      if (!back || back.name !== c.name || got < expected * 0.98) {
+        throw new ImportIntegrityError(`角色「${c.name}」保存后读回的资料只有 ${got} 字（应为 ${expected} 字），已取消本次导入`)
+      }
       idByKey.set(plan.key, c.id)
       characterIds.push(c.id)
     }

@@ -13,7 +13,8 @@ import { saveImport } from '../db/repo'
 import type { ImportSummary } from '../db/repo'
 import { DEFAULT_WORLD_ID } from '../db/schema'
 import type { Character, Lorebook } from '../db/schema'
-import { draftFromSections, fileStem, normalizeName } from '../import/parse'
+import { draftFromSections, draftTextChars, normalizeName } from '../import/parse'
+import { visibleChars } from '../import/characterDoc'
 import { FILE_ACCEPT, importFile, containerLabel, type ImportOptions } from '../import/pipeline'
 import { ENCODINGS, type EncodingId } from '../import/extract/bytes'
 import { browserCMapUrl, loadPdfjsBrowser } from '../import/pdfjsBrowser'
@@ -33,6 +34,45 @@ import {
   type WorldDraft,
   emptyWorldDraft,
 } from '../import/types'
+
+/* ---------------- 文档统计 ---------------- */
+
+/** 预览中的核对信息：提取了多少字、识别出哪些字段、哪些内容未归类、将保存多少字 */
+function DocStats({ item, doc }: { item: { draft: CharacterDraft; sections?: TextSection[] }; doc?: ParsedFile['doc'] }) {
+  if (!doc) return null
+  const total = visibleChars(doc.text)
+  const saving = draftTextChars(item.draft)
+  const sections = item.sections ?? []
+  const byField = new Map<string, number>()
+  for (const s of sections) {
+    if (s.target === 'ignore' || s.target === 'name' || s.target === 'extra') continue
+    byField.set(FIELD_LABELS[s.target], (byField.get(FIELD_LABELS[s.target]) ?? 0) + visibleChars(s.text))
+  }
+  const extras = sections.filter((s) => s.target === 'extra')
+  const ignored = sections.filter((s) => s.target === 'ignore')
+  const low = total > 0 && saving < total * 0.8
+  return (
+    <div className="rounded-xl bg-white/55 border border-[var(--c-line)] px-3 py-2.5 text-[12px] leading-relaxed text-[var(--c-text-2)]">
+      <div>
+        提取 <b className="text-[var(--c-text)]">{total.toLocaleString()}</b> 字
+        {doc.paragraphs ? ` · ${doc.paragraphs} 段` : ''} · 将保存 <b className="text-[var(--c-text)]">{saving.toLocaleString()}</b> 字
+        <span className="text-[var(--c-text-3)]">（不含标题）</span>
+      </div>
+      {byField.size > 0 && (
+        <div className="mt-1">
+          已识别：{[...byField].map(([k, n]) => `${k} ${n} 字`).join('、')}
+        </div>
+      )}
+      {extras.length > 0 && (
+        <div className="mt-1">
+          其他设定（完整保留）：{extras.map((s) => `「${s.label || '开头部分'}」${visibleChars(s.text)} 字`).join('、')}
+        </div>
+      )}
+      {ignored.length > 0 && <div className="mt-1 text-[var(--c-danger)]">已选择不保存 {ignored.length} 段</div>}
+      {low && <div className="mt-1 text-[var(--c-danger)]">将保存的文字明显少于提取的文字，请检查是否有段落被忽略。</div>}
+    </div>
+  )
+}
 
 /* ---------------- 预览状态 ---------------- */
 
@@ -58,6 +98,8 @@ interface CharItem {
   dupAction: DupAction
   draft: CharacterDraft
   sections?: TextSection[]
+  /** 文本类角色文档：角色名称是否有把握、候选名称 */
+  nameCheck?: ParsedFile['nameCheck']
   nameEdited: boolean
   expanded: boolean
   /** 头像（PNG / CharX 卡片图片，压缩后的 dataURL） */
@@ -101,8 +143,11 @@ const SECTION_TARGETS: SectionTarget[] = [
   'relationToUser',
   'greeting',
   'exampleDialogue',
+  'extra',
   'ignore',
 ]
+
+const targetLabel = (t: SectionTarget) => (t === 'ignore' ? '忽略（不保存）' : t === 'extra' ? '其他设定（保留原文）' : FIELD_LABELS[t])
 
 const splitKeys = (s: string) =>
   s
@@ -236,6 +281,7 @@ export default function ImportPage() {
         dupAction: 'skip',
         draft,
         sections: f.sections,
+        nameCheck: i === 0 ? f.nameCheck : undefined,
         nameEdited: false,
         expanded: !!f.sections,
         avatar: i === 0 ? avatar : undefined,
@@ -375,8 +421,10 @@ export default function ImportPage() {
 
   const updateSections = (item: CharItem, sections: TextSection[]) => {
     const fileName = files[item.fileIndex]?.fileName ?? ''
-    const draft = draftFromSections(sections, fileStem(fileName))
-    if (item.nameEdited) draft.name = item.draft.name
+    void fileName
+    const draft = draftFromSections(sections, item.draft.name)
+    // 名称不随段落调整而改变（除非用户把某段设为「角色名称」）
+    if (item.nameEdited || !sections.some((x) => x.target === 'name')) draft.name = item.draft.name
     patchChar(item.key, (c) => ({ ...c, sections, draft }))
   }
 
@@ -393,6 +441,11 @@ export default function ImportPage() {
           draft: c.draft,
           avatar: c.avatar,
           source: { fileName: files[c.fileIndex].fileName, format: files[c.fileIndex].format },
+          sourceDoc: (() => {
+            const d = files[c.fileIndex].doc
+            // 只为单角色文档保存全文（用于核对与以后重新整理，不直接发给模型）
+            return d && c.sections ? { fileName: files[c.fileIndex].fileName, text: d.text.slice(0, 300_000), chars: visibleChars(d.text), paragraphs: d.paragraphs } : undefined
+          })(),
         })),
         savingBooks.map((b) => ({
           key: b.key,
@@ -759,6 +812,28 @@ export default function ImportPage() {
 
                     <div className="mt-2 space-y-2">
                       {c.include && !c.draft.name.trim() && <Notice tone="error">请填写角色名称</Notice>}
+                      {c.include && c.nameCheck && !c.nameCheck.confident && !c.nameEdited && (
+                        <Notice>
+                          <div>没能从文件里确定角色名称，请确认上面的名字。</div>
+                          {c.nameCheck.candidates.length > 0 && (
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              {c.nameCheck.candidates.map((n) => (
+                                <button
+                                  key={n}
+                                  onClick={() => patchChar(c.key, (x) => ({ ...x, nameEdited: true, draft: { ...x.draft, name: n } }))}
+                                  className="press h-7 px-2.5 rounded-full bg-white/70 border border-[var(--c-line)] text-[12px]"
+                                >
+                                  用「{n}」
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </Notice>
+                      )}
+                      {c.include && c.nameCheck?.confident && !c.nameEdited && (
+                        <div className="text-[11.5px] text-[var(--c-text-3)]">角色名称来自{c.nameCheck.source}</div>
+                      )}
+                      {c.sections && <DocStats item={c} doc={f.doc} />}
                       {c.include && dup && (
                         <DupChooser
                           text={dup}
@@ -781,12 +856,14 @@ export default function ImportPage() {
                     {c.expanded && c.sections && (
                       <div className="mt-3 space-y-3">
                         <Notice tone="info">
-                          TXT / Markdown 不会自动猜测内容含义。请为每一段选择它属于哪个字段，选「忽略」则不保存该段。
+                          已按标题自动归类（只看标题，不猜测内容）。可以为每一段改选字段；无法归类的段落标为「其他设定」，原文完整保留；只有选「忽略」的段落不保存。
                         </Notice>
                         {c.sections.map((s, si) => (
                           <div key={si} className="rounded-xl bg-[var(--c-bg-2)] p-2.5">
                             <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <span className="text-xs text-[var(--c-text-3)] truncate">{s.label || `段落 ${si + 1}`}</span>
+                              <span className="text-xs text-[var(--c-text-3)] truncate">
+                                {s.label || `段落 ${si + 1}`} · {visibleChars(s.text)} 字
+                              </span>
                               <select
                                 value={s.target}
                                 onChange={(e) =>
@@ -799,7 +876,7 @@ export default function ImportPage() {
                               >
                                 {SECTION_TARGETS.map((t) => (
                                   <option key={t} value={t}>
-                                    {t === 'ignore' ? '忽略' : FIELD_LABELS[t]}
+                                    {targetLabel(t)}
                                   </option>
                                 ))}
                               </select>

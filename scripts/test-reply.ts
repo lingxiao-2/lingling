@@ -357,3 +357,58 @@ test('「刷新」后（重新打开数据库）消息与表情包仍然存在',
   assert.equal(saved?.name, '晚安')
   fresh.close()
 })
+
+/* ---------------- 长篇人设 DOCX：导入 → 保存 → 刷新 → 上下文 ---------------- */
+
+test('长篇人设 DOCX 端到端：全部资料写入 IndexedDB，重新打开后完整，AI 上下文包含核心人设', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { importFile } = await import('../src/import/pipeline')
+  const { buildContext } = await import('../src/services/ai/context')
+  const { characterTextChars } = await import('../src/db/repo')
+  const bytes = new Uint8Array(readFileSync('scripts/fixtures/files/long-persona.docx'))
+  const [r] = await importFile('林晚prompt.docx', bytes, 'character', {})
+  assert.ok(r.ok)
+  if (!r.ok) return
+  const d = r.file.characters[0]
+  const before = (await db.characters.toArray()).map((c) => c.id)
+  const res = await saveImport(
+    [{ key: 'k', draft: d, source: { fileName: '林晚prompt.docx', format: r.file.format }, sourceDoc: { fileName: '林晚prompt.docx', text: r.file.doc!.text, chars: 1, paragraphs: r.file.doc!.paragraphs } }],
+    [],
+  )
+  // 已有角色不受影响
+  for (const id of before) assert.ok(await db.characters.get(id))
+  const fresh = new LinglingDB()
+  await fresh.open()
+  const saved = await fresh.characters.get(res.characterIds[0])
+  fresh.close()
+  assert.ok(saved)
+  assert.equal(saved!.name, '林晚')
+  assert.equal(saved!.personality, d.personality.trim())
+  assert.equal(saved!.speakingStyle, d.speakingStyle.trim())
+  assert.equal(saved!.backstory, d.backstory.trim())
+  assert.equal(saved!.relationToUser, d.relationToUser.trim())
+  assert.equal(saved!.exampleDialogue, d.exampleDialogue.trim())
+  assert.deepEqual(saved!.profileExtras!.map((e) => e.label), ['核心任务', '特别说明'])
+  assert.equal(saved!.sourceDoc?.text, r.file.doc!.text)
+  assert.ok(characterTextChars(saved!) > 7500)
+  const ctx = buildContext({ character: saved!, userName: '我', lorebooks: [], history: [] })
+  const sys = ctx.messages[0].content
+  assert.ok(sys.includes(saved!.personality.slice(0, 40)))
+  assert.ok(sys.includes(saved!.speakingStyle.slice(0, 40)))
+  assert.ok(sys.includes('【核心任务】'))
+})
+
+test('保存后读回的资料明显变少：整个导入回滚并报错，不显示成功', async () => {
+  const { ImportIntegrityError } = await import('../src/db/repo')
+  const d = { name: '测试', bio: '', personality: '温柔'.repeat(200), speakingStyle: '', backstory: '雪'.repeat(500), relationToUser: '', greeting: '', exampleDialogue: '', extensions: {}, extras: [] }
+  const count = await db.characters.count()
+  // 模拟写入后读回时内容被截断
+  const hook = (obj: { backstory?: string }) => ({ ...obj, backstory: (obj.backstory ?? '').slice(0, 10) })
+  db.characters.hook('reading', hook)
+  try {
+    await assert.rejects(saveImport([{ key: 'k', draft: d, source: { fileName: 'x.docx', format: 'text' } }], []), ImportIntegrityError)
+  } finally {
+    db.characters.hook('reading').unsubscribe(hook)
+  }
+  assert.equal(await db.characters.count(), count)
+})

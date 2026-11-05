@@ -9,6 +9,7 @@ import type { Character, Lorebook, LoreEntry, Message, Sticker, World } from '..
 import type { ChatTurn } from './provider'
 import { renderAssistantTurn, type ReplyPart } from './messageFormat'
 import { formatSection, stickerFrequency, styleSection, type StickerOption } from './style'
+import { layerProfile, pickRelated } from './profile'
 
 /** 一次最多向模型提供多少个表情包（控制 Token） */
 export const MAX_OFFERED_STICKERS = 24
@@ -43,6 +44,8 @@ export interface BuiltContext {
   messages: ChatTurn[]
   /** 实际注入的世界书条目名称（用于界面提示与调试） */
   usedEntries: string[]
+  /** 本次附带的扩展人设资料段数（长篇人设） */
+  relatedProfileChunks: number
   historyCount: number
   /** 本次允许 AI 使用的表情包：短编号 → 真实 ID（解析回复时据此校验） */
   stickerMap: Map<string, string>
@@ -119,12 +122,19 @@ export function buildContext(input: ContextInput): BuiltContext {
     `你是「${name}」，正在一款聊天软件里和「${user}」聊天。请以${name}的身份、用第一人称自然地回复，不要替${user}说话或描写${user}的行为。` +
       `平时不必主动谈论技术细节；但如果${user}认真地问你是不是真人，要诚实说明你是 AI 扮演的角色。不要刻意让${user}依赖你，也不要劝${user}疏远现实中的人。`,
   ]
+  // 长篇人设分层：核心设定每次发送；超出预算的部分按与最近聊天的相关程度挑选（见 profile.ts）
+  const layered = layerProfile(c)
+  const related = pickRelated(layered.pool, recent)
   const field = (label: string, v: string) => v && parts.push(`【${label}】\n${v}`)
-  field('角色简介', m(c.bio))
-  field('性格', m(c.personality))
-  field('说话风格', m(c.speakingStyle))
-  field('背景故事', m(c.backstory))
-  field(`与${user}的关系`, m(c.relationToUser))
+  field('角色简介', m(layered.core.bio))
+  field('性格', m(layered.core.personality))
+  field('说话风格', m(layered.core.speakingStyle))
+  field('背景故事', m(layered.core.backstory))
+  field(`与${user}的关系`, m(layered.core.relationToUser))
+  for (const e of layered.coreExtras) field(e.label, m(e.text))
+  if (related.length) {
+    parts.push(`【与当前话题相关的角色资料】（节选，供参考）\n${related.map((r) => `· ${r.label}：${m(r.text)}`).join('\n')}`)
+  }
   if (input.world) {
     const w = input.world
     const body = [w.tagline, w.description].filter((x) => x && x.trim()).join('\n')
@@ -188,6 +198,7 @@ export function buildContext(input: ContextInput): BuiltContext {
   return {
     messages: [{ role: 'system', content: parts.join('\n\n') }, ...chat],
     usedEntries: entries.map((e) => e.name),
+    relatedProfileChunks: related.length,
     historyCount: picked.length,
     stickerMap: offered.map,
   }
