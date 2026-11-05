@@ -43,7 +43,11 @@ globalThis.fetch = (async (url: string, init: RequestInit) => {
     async start(c) {
       for (const [i, ch] of chunks.entries()) {
         if (init.signal?.aborted) return c.error(Object.assign(new Error('aborted'), { name: 'AbortError' }))
-        if (mode === 'cut' && i === cutAt) return c.error(new TypeError('network down'))
+        if (mode === 'cut' && i === cutAt) {
+          // 先让读取方取走已经发出的数据（error() 会丢弃队列中尚未读取的部分），再模拟断网
+          await new Promise((r) => setTimeout(r, 60))
+          return c.error(new TypeError('network down'))
+        }
         c.enqueue(enc.encode(ch))
         if (mode === 'slow') await new Promise((r) => setTimeout(r, 30))
       }
