@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import NavBar from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import { AreaField, PrimaryButton, Section, TextField } from '../components/ui'
 import { db } from '../db/db'
+import { DEFAULT_WORLD_ID } from '../db/schema'
+import type { World } from '../db/schema'
 import { createCharacter, updateCharacter } from '../db/repo'
 import type { CharacterInput } from '../db/repo'
 import { imageToAvatar } from '../lib/util'
@@ -19,13 +21,20 @@ const EMPTY: CharacterInput = {
   relationToUser: '',
   greeting: '',
   exampleDialogue: '',
+  worldId: DEFAULT_WORLD_ID,
 }
 
 export default function CharacterEditPage() {
   const { id } = useParams()
   const nav = useNavigate()
   const existing = useLiveQuery(() => (id ? db.characters.get(id) : undefined), [id])
-  const [form, setForm] = useState<CharacterInput>(EMPTY)
+  const [params] = useSearchParams()
+  const worlds = useLiveQuery(
+    async () => (await db.worlds.toArray()).filter((w) => w.id !== DEFAULT_WORLD_ID),
+    [],
+    [] as World[],
+  )
+  const [form, setForm] = useState<CharacterInput>(() => ({ ...EMPTY, worldId: params.get('world') || DEFAULT_WORLD_ID }))
   const [saving, setSaving] = useState(false)
   const loaded = useRef(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -44,6 +53,7 @@ export default function CharacterEditPage() {
       relationToUser,
       greeting: existing.greeting ?? '',
       exampleDialogue: existing.exampleDialogue ?? '',
+      worldId: existing.worldId,
     })
   }, [existing])
 
@@ -73,6 +83,7 @@ export default function CharacterEditPage() {
       relationToUser: form.relationToUser.trim(),
       greeting: (form.greeting ?? '').trim(),
       exampleDialogue: (form.exampleDialogue ?? '').trim(),
+      worldId: form.worldId || DEFAULT_WORLD_ID,
     }
     if (id) {
       await updateCharacter(id, data)
@@ -116,6 +127,22 @@ export default function CharacterEditPage() {
           <TextField label="昵称（必填）" value={form.name} maxLength={20} onChange={(e) => set('name', e.target.value)} placeholder="角色的名字" />
           <AreaField label="角色简介" rows={2} value={form.bio} maxLength={120} onChange={(e) => set('bio', e.target.value)} placeholder="一句话介绍 TA" />
           <TextField label="与你的关系" value={form.relationToUser} maxLength={40} onChange={(e) => set('relationToUser', e.target.value)} placeholder="例如：青梅竹马、同事、旧友" />
+          <label className="block px-4 py-3">
+            <div className="text-xs text-[var(--c-text-2)] mb-1.5">所属世界</div>
+            <select
+              value={form.worldId ?? DEFAULT_WORLD_ID}
+              onChange={(e) => set('worldId', e.target.value)}
+              className="w-full rounded-xl bg-[var(--c-bg-2)] px-3 py-2.5 text-[15px] outline-none border border-transparent focus:border-[var(--c-accent)]"
+            >
+              <option value={DEFAULT_WORLD_ID}>未归入世界</option>
+              {worlds.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+            <div className="text-[11px] text-[var(--c-text-3)] mt-1.5 leading-relaxed">一个角色只属于一个世界，可以随时更换。</div>
+          </label>
         </Section>
 
         <Section title="人设">

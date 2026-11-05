@@ -12,6 +12,7 @@
  */
 import {
   emptyCharacterDraft,
+  emptyWorldDraft,
   type CharacterDraft,
   type CharacterFieldKey,
   type Extensions,
@@ -22,6 +23,7 @@ import {
   type ParsedFile,
   type ParseOutcome,
   type TextSection,
+  type WorldDraft,
 } from './types'
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -228,6 +230,55 @@ function parseCharacterObject(o: Obj, warnings: string[]): CharResult | null {
 }
 
 /* ======================================================================
+ * 世界设定
+ * ==================================================================== */
+
+type WorldField = 'name' | 'tagline' | 'description'
+
+const WORLD_ALIASES: Record<WorldField, string[]> = {
+  name: ['name', 'title', 'worldname', '世界名', '世界名称', '名称', '名字', '标题'],
+  tagline: ['tagline', 'subtitle', 'slogan', 'summary', 'intro', '一句话', '一句话简介', '简介', '副标题', '概述'],
+  description: ['description', 'setting', 'worldview', 'lore', 'overview', 'background', 'content', '世界观', '设定', '世界设定', '描述', '背景', '正文'],
+}
+const WORLD_INDEX = new Map<string, WorldField>()
+for (const [f, list] of Object.entries(WORLD_ALIASES) as [WorldField, string[]][]) {
+  for (const a of list) WORLD_INDEX.set(normKey(a), f)
+}
+
+export function parseWorldObject(o: Obj): WorldDraft {
+  const w = emptyWorldDraft()
+  const parts: Partial<Record<WorldField, string[]>> = {}
+  const unmapped: Obj = {}
+  for (const [k, v] of Object.entries(o)) {
+    const f = WORLD_INDEX.get(normKey(k))
+    const text = str(v)
+    if (f && text) (parts[f] ??= []).push(text)
+    else unmapped[k] = v
+  }
+  w.name = parts.name?.[0] ?? ''
+  w.tagline = parts.tagline ? firstLine(parts.tagline.join(' '), 60) : ''
+  w.description = joinParts(...(parts.description ?? []))
+  if (Object.keys(unmapped).length) w.extensions.unmapped = unmapped
+  return w
+}
+
+const WORLD_KEYS = ['world', 'worldSetting', 'world_setting', 'setting', '世界', '世界设定']
+
+function findWorld(root: Obj): Obj | null {
+  for (const k of WORLD_KEYS) if (isObj(root[k])) return root[k] as Obj
+  return null
+}
+
+/** 只有世界才会有、角色不会有的判断：没有任何角色专属字段 */
+const CHARACTER_ONLY: CharacterFieldKey[] = ['personality', 'speakingStyle', 'relationToUser', 'greeting', 'exampleDialogue']
+function hasCharacterOnlyFields(o: Obj): boolean {
+  return Object.keys(o).some((k) => {
+    const f = matchFieldLabel(k)
+    return f !== null && CHARACTER_ONLY.includes(f)
+  })
+}
+
+/* ======================================================================
  * JSON 入口
  * ==================================================================== */
 
@@ -243,6 +294,7 @@ class Collector {
   lorebooks: LorebookDraft[] = []
   links: { character: number; lorebook: number }[] = []
   formats = new Set<ImportFormat>()
+  world?: WorldDraft
 
   addCharacter(r: CharResult): number {
     const ci = this.characters.push(r.draft) - 1
@@ -264,7 +316,7 @@ class Collector {
 /** 组合文件：在同一文件内按「下标或名称」解析引用，保存时再换成稳定 ID */
 function parseCombo(root: Obj, warnings: string[], c: Collector) {
   const charsRaw = Array.isArray(root.characters) ? root.characters : []
-  const booksRaw = refList(root, ['lorebooks', 'worldbooks', 'world_books', 'worlds'])
+  const booksRaw = refList(root, ['lorebooks', 'worldbooks', 'world_books'])
 
   const charIdx: number[] = []
   const charRefs: unknown[][] = []
@@ -315,7 +367,7 @@ function parseCombo(root: Obj, warnings: string[], c: Collector) {
   c.formats.add('combo-json')
 }
 
-function parseJsonRoot(root: unknown, fileName: string, warnings: string[]): Collector | string {
+function parseJsonRoot(root: unknown, fileName: string, warnings: string[], kind: ImportKind): Collector | string {
   const c = new Collector()
   const handleObj = (o: Obj, label: string): boolean => {
     const r = parseCharacterObject(o, warnings)
@@ -339,8 +391,25 @@ function parseJsonRoot(root: unknown, fileName: string, warnings: string[]): Col
       else warnings.push(`第 ${i + 1} 项不是对象，已跳过`)
     })
   } else if (isObj(root)) {
-    if (Array.isArray(root.characters) || refList(root, ['lorebooks', 'worldbooks', 'world_books', 'worlds']).length) {
+    const worldObj = findWorld(root)
+    if (worldObj) {
+      c.world = parseWorldObject(worldObj)
+      c.formats.add('world-json')
+    }
+    if (Array.isArray(root.characters) || refList(root, ['lorebooks', 'worldbooks', 'world_books']).length) {
       parseCombo(root, warnings, c)
+    } else if (worldObj) {
+      // 只有世界设定，没有角色和世界书
+    } else if (
+      kind === 'world' &&
+      !(typeof root.spec === 'string') &&
+      !hasEntries(root) &&
+      !looksLikeStV1(root) &&
+      !hasCharacterOnlyFields(root)
+    ) {
+      // 世界导入模式下，一个只有名称和描述的对象视为世界设定
+      c.world = parseWorldObject(root)
+      c.formats.add('world-json')
     } else {
       // 兼容 { "character": {...} } 包装
       const inner = isObj(root.character) && Object.keys(root).length === 1 ? root.character : root
@@ -353,7 +422,7 @@ function parseJsonRoot(root: unknown, fileName: string, warnings: string[]): Col
     return 'JSON 顶层必须是对象或数组'
   }
 
-  if (c.characters.length === 0 && c.lorebooks.length === 0) return '文件中没有可导入的角色或世界书'
+  if (c.characters.length === 0 && c.lorebooks.length === 0 && !c.world) return '文件中没有可导入的角色、世界书或世界设定'
   return c
 }
 
@@ -501,6 +570,34 @@ function parseTextLorebook(fileName: string, text: string, markdown: boolean, wa
   }
 }
 
+/** 世界设定 TXT / Markdown：一级标题（或「名称：」行）作为世界名，其余全文作为设定，保留原有排版 */
+function parseTextWorld(fileName: string, text: string, markdown: boolean, warnings: string[]): ParsedFile {
+  const lines = text.split(/\r?\n/)
+  const world = emptyWorldDraft()
+  const firstIdx = lines.findIndex((l) => l.trim())
+  const first = firstIdx >= 0 ? lines[firstIdx] : ''
+  const h1 = markdown ? /^\s{0,3}#\s+(.+?)\s*#*\s*$/.exec(first) : null
+  const nameLine = /^\s*(世界名称|世界名|名称|名字)\s*[:：]\s*(.+)$/.exec(first)
+  let body = lines
+  if (h1 || nameLine) {
+    world.name = (h1 ? h1[1] : nameLine![2]).replace(/[*_`]/g, '').trim()
+    body = lines.slice(firstIdx + 1)
+  } else {
+    world.name = fileStem(fileName)
+    warnings.push(`未找到世界名称，已暂用文件名「${world.name}」，请确认或修改`)
+  }
+  // 紧跟标题的「简介：」行作为一句话简介
+  const nextIdx = body.findIndex((l) => l.trim())
+  const tag = nextIdx >= 0 ? /^\s*(简介|一句话简介|副标题|一句话)\s*[:：]\s*(.+)$/.exec(body[nextIdx]) : null
+  if (tag) {
+    world.tagline = firstLine(tag[2], 60)
+    body = body.slice(nextIdx + 1)
+  }
+  world.description = body.join('\n').trim()
+  if (!world.description) warnings.push('世界设定正文为空')
+  return { fileName, format: markdown ? 'markdown' : 'text', characters: [], lorebooks: [], links: [], warnings, world }
+}
+
 /* ======================================================================
  * 总入口
  * ==================================================================== */
@@ -530,8 +627,20 @@ export function parseImportFile(fileName: string, rawText: string, kind: ImportK
       const msg = e instanceof Error ? e.message : String(e)
       return fail(`JSON 格式错误，无法解析（${msg}）`)
     }
-    const r = parseJsonRoot(root, fileName, warnings)
+    const r = parseJsonRoot(root, fileName, warnings, kind)
     if (typeof r === 'string') return fail(r)
+    let world = r.world
+    if (world && kind !== 'world') {
+      warnings.push('文件中包含世界设定，当前不是世界导入，世界设定不会保存。如需导入，请到「世界」中选择从本地文件导入')
+      world = undefined
+      if (r.characters.length === 0 && r.lorebooks.length === 0) {
+        return fail('这个文件只包含世界设定，请到「世界」中选择从本地文件导入')
+      }
+    }
+    if (world && !world.name) {
+      world.name = fileStem(fileName)
+      warnings.push(`世界缺少名称，已暂用文件名「${world.name}」，请确认`)
+    }
     r.characters.forEach((ch, i) => {
       if (!ch.name) {
         ch.name = r.characters.length === 1 ? fileStem(fileName) : ''
@@ -544,7 +653,10 @@ export function parseImportFile(fileName: string, rawText: string, kind: ImportK
     })
     const formats = [...r.formats]
     const format: ImportFormat = r.formats.has('combo-json') || formats.length > 1 ? 'combo-json' : formats[0] ?? 'generic-json'
-    return { ok: true, file: { fileName, format, characters: r.characters, lorebooks: r.lorebooks, links: r.links, warnings } }
+    return {
+      ok: true,
+      file: { fileName, format, characters: r.characters, lorebooks: r.lorebooks, links: r.links, warnings, world },
+    }
   }
 
   if (!['txt', 'md', 'markdown', ''].includes(ext)) {
@@ -554,7 +666,9 @@ export function parseImportFile(fileName: string, rawText: string, kind: ImportK
   const file =
     kind === 'lorebook'
       ? parseTextLorebook(fileName, text, markdown, warnings)
-      : parseTextCharacter(fileName, text, markdown, warnings)
+      : kind === 'world'
+        ? parseTextWorld(fileName, text, markdown, warnings)
+        : parseTextCharacter(fileName, text, markdown, warnings)
   return { ok: true, file }
 }
 

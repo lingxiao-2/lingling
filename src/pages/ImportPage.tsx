@@ -5,11 +5,13 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { AlertCircle, Check, ChevronDown, ChevronUp, FileText, Link2 } from 'lucide-react'
 import NavBar from '../components/NavBar'
 import PickerSheet from '../components/PickerSheet'
+import WorldCover from '../components/WorldCover'
 import type { PickerOption } from '../components/PickerSheet'
 import { PrimaryButton } from '../components/ui'
 import { db } from '../db/db'
 import { saveImport } from '../db/repo'
 import type { ImportSummary } from '../db/repo'
+import { DEFAULT_WORLD_ID } from '../db/schema'
 import type { Character, Lorebook } from '../db/schema'
 import { MAX_FILE_BYTES, draftFromSections, fileStem, normalizeName, parseImportFile } from '../import/parse'
 import {
@@ -22,6 +24,8 @@ import {
   type LorebookDraft,
   type SectionTarget,
   type TextSection,
+  type WorldDraft,
+  emptyWorldDraft,
 } from '../import/types'
 
 /* ---------------- 预览状态 ---------------- */
@@ -151,12 +155,27 @@ function DupChooser({
   )
 }
 
+const KIND_TITLES: Record<ImportKind, string> = {
+  character: '导入角色',
+  world: '导入世界',
+  lorebook: '导入世界书',
+}
+
 /* ---------------- 页面 ---------------- */
 
 export default function ImportPage() {
   const nav = useNavigate()
   const [params, setParams] = useSearchParams()
-  const kind: ImportKind = params.get('kind') === 'lorebook' ? 'lorebook' : 'character'
+  const rawKind = params.get('kind')
+  const kind: ImportKind = rawKind === 'lorebook' || rawKind === 'world' ? rawKind : 'character'
+  /** 从世界页面进入时，导入的角色与世界书归入这个已有世界 */
+  const targetWorldId = kind !== 'world' ? params.get('world') ?? undefined : undefined
+  const targetWorld = useLiveQuery(
+    async () => (targetWorldId && targetWorldId !== DEFAULT_WORLD_ID ? (await db.worlds.get(targetWorldId)) ?? null : null),
+    [targetWorldId],
+  )
+  const [world, setWorld] = useState<WorldDraft | null>(null)
+  const [worldSource, setWorldSource] = useState<{ fileName: string; format: ImportFormat } | null>(null)
 
   const [stage, setStage] = useState<'pick' | 'reading' | 'preview' | 'saving' | 'done'>('pick')
   const [files, setFiles] = useState<FileInfo[]>([])
@@ -187,6 +206,8 @@ export default function ImportPage() {
     const errs: FileError[] = []
     const cs: CharItem[] = []
     const bs: BookItem[] = []
+    let foundWorld: WorldDraft | null = null
+    let worldSrc: { fileName: string; format: ImportFormat } | null = null
 
     for (const file of Array.from(list)) {
       if (file.size > MAX_FILE_BYTES) {
@@ -207,6 +228,14 @@ export default function ImportPage() {
       }
       const fi = infos.length
       const f = r.file
+      if (f.world) {
+        if (!foundWorld) {
+          foundWorld = f.world
+          worldSrc = { fileName: f.fileName, format: f.format }
+        } else {
+          f.warnings.push(`已使用「${worldSrc?.fileName}」中的世界设定，本文件中的世界设定「${f.world.name}」未采用`)
+        }
+      }
       infos.push({ index: fi, fileName: f.fileName, format: f.format, warnings: f.warnings })
       const charKeys = f.characters.map((draft, i) => {
         const key = `f${fi}c${i}`
@@ -241,6 +270,8 @@ export default function ImportPage() {
     setErrors(errs)
     setChars(cs)
     setBooks(bs)
+    setWorld(kind === 'world' ? foundWorld ?? emptyWorldDraft() : null)
+    setWorldSource(worldSrc)
     setSaveError('')
     setStage('preview')
   }
@@ -269,6 +300,8 @@ export default function ImportPage() {
   const savingChars = chars.filter(charWillSave)
   const savingBooks = books.filter(bookWillSave)
   const missingName = savingChars.some((c) => !c.draft.name.trim())
+  const missingWorldName = !!world && !world.name.trim()
+  const canSave = !missingName && !missingWorldName && (savingChars.length + savingBooks.length > 0 || !!world)
 
   /* ---- 更新 ---- */
   const patchChar = (key: string, fn: (c: CharItem) => CharItem) =>
@@ -285,7 +318,7 @@ export default function ImportPage() {
 
   /* ---- 保存 ---- */
   const save = async () => {
-    if (missingName || (savingChars.length === 0 && savingBooks.length === 0)) return
+    if (!canSave) return
     setStage('saving')
     setSaveError('')
     try {
@@ -306,6 +339,8 @@ export default function ImportPage() {
           linkNewCharacters: b.linkNew.filter((k) => savingKeys.has(k)),
           linkExistingCharacters: b.linkExisting,
         })),
+        world ? { draft: world, source: worldSource ?? undefined } : undefined,
+        targetWorld ? targetWorld.id : undefined,
       )
       setSummary(result)
       setStage('done')
@@ -320,6 +355,7 @@ export default function ImportPage() {
     setErrors([])
     setChars([])
     setBooks([])
+    setWorld(null)
     setSummary(null)
     setStage('pick')
   }
@@ -341,20 +377,29 @@ export default function ImportPage() {
   if (stage === 'done' && summary) {
     return (
       <div className="h-dvh flex flex-col">
-        <NavBar title="导入完成" back="/contacts" />
+        <NavBar title="导入完成" back={summary.worldId ? '/contacts?tab=worlds' : '/contacts'} />
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center px-8 pt-16 gap-3 text-center">
           <div className="h-14 w-14 rounded-full bg-[var(--c-accent-soft)] flex items-center justify-center text-[var(--c-accent-strong)]">
             <Check size={28} strokeWidth={1.8} />
           </div>
           <div className="text-lg">已保存到本设备</div>
           <div className="text-sm text-[var(--c-text-2)] leading-relaxed">
-            角色 {summary.characters} 个 · 世界书 {summary.lorebooks} 本 · 关联 {summary.links} 条
+            {summary.worldId && <>世界 1 个 · </>}角色 {summary.characters} 个 · 世界书 {summary.lorebooks} 本 · 角色关联{' '}
+            {summary.links} 条
           </div>
           <div className="flex flex-col gap-3 mt-6 w-full max-w-xs">
-            <PrimaryButton onClick={() => nav('/contacts')}>查看联系人</PrimaryButton>
-            {summary.lorebooks > 0 && (
+            {summary.worldId ? (
+              <PrimaryButton onClick={() => nav(`/world/${summary.worldId}`, { replace: true })}>查看世界</PrimaryButton>
+            ) : targetWorld ? (
+              <PrimaryButton onClick={() => nav(`/world/${targetWorld.id}`, { replace: true })}>
+                返回「{targetWorld.name}」
+              </PrimaryButton>
+            ) : summary.characters > 0 ? (
+              <PrimaryButton onClick={() => nav('/contacts?tab=characters', { replace: true })}>查看角色</PrimaryButton>
+            ) : null}
+            {!summary.worldId && !targetWorld && summary.lorebooks > 0 && (
               <button
-                onClick={() => nav('/lorebooks')}
+                onClick={() => nav('/contacts?tab=lorebooks', { replace: true })}
                 className="press h-11 rounded-full border border-[var(--c-accent)] text-[var(--c-accent-strong)] text-[15px]"
               >
                 查看世界书
@@ -372,25 +417,44 @@ export default function ImportPage() {
   if (stage === 'pick' || stage === 'reading') {
     return (
       <div className="h-dvh flex flex-col">
-        <NavBar title={kind === 'lorebook' ? '导入世界书' : '导入角色'} back />
+        <NavBar title={KIND_TITLES[kind]} back />
         <div className="flex-1 min-h-0 overflow-y-auto pb-10">
-          <div className="mx-3 mt-3 p-1 rounded-full bg-white/70 grid grid-cols-2 text-sm">
-            {(['character', 'lorebook'] as const).map((k) => (
-              <button
-                key={k}
-                onClick={() => setParams({ kind: k }, { replace: true })}
-                className={`press h-9 rounded-full ${
-                  kind === k ? 'bg-[var(--c-accent)] text-white' : 'text-[var(--c-text-2)]'
-                }`}
-              >
-                {k === 'character' ? '角色' : '世界书'}
-              </button>
-            ))}
+          {targetWorld ? (
+            <div className="mx-4 mt-4 rounded-2xl bg-[var(--c-accent-soft)] px-4 py-3 text-xs leading-relaxed text-[var(--c-text-2)]">
+              导入的{kind === 'lorebook' ? '世界书将关联到' : '角色将归入'}世界
+              <span className="serif-zh text-[var(--c-brand)]">「{targetWorld.name}」</span>
+            </div>
+          ) : (
+            <div role="tablist" className="flex justify-center gap-10 hairline-b">
+              {(['character', 'world', 'lorebook'] as const).map((k) => (
+                <button
+                  key={k}
+                  role="tab"
+                  aria-selected={kind === k}
+                  onClick={() => setParams({ kind: k }, { replace: true })}
+                  className="press lib-tab"
+                >
+                  {k === 'character' ? '角色' : k === 'world' ? '世界' : '世界书'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="pt-8 pb-2 text-center">
+            <div className="eyebrow">{kind === 'world' ? 'Import a World' : kind === 'lorebook' ? 'Import Lorebooks' : 'Import Characters'}</div>
+            <div className="serif-zh mt-2 text-[18px] tracking-[0.14em] text-[var(--c-brand)]">从本地文件导入</div>
           </div>
 
-          <div className="card mx-3 mt-4 p-5 text-sm leading-relaxed text-[var(--c-text-2)]">
-            <div className="text-[15px] text-[var(--c-text)] font-medium mb-2">支持的文件</div>
-            {kind === 'character' ? (
+          <div className="card mx-4 mt-4 p-5 text-sm leading-relaxed text-[var(--c-text-2)]">
+            <div className="text-[13px] text-[var(--c-text-3)] tracking-wider mb-2">支持的文件</div>
+            {kind === 'world' ? (
+              <ul className="list-disc pl-5 space-y-1">
+                <li>世界设定 Markdown / TXT：一级标题作为世界名称，其余内容作为设定</li>
+                <li>世界设定 JSON（name / 世界名、tagline / 简介、description / 世界观 等字段）</li>
+                <li>组合 JSON：{'{ world, characters, lorebooks }'}，一次导入世界、角色与世界书</li>
+                <li>可同时选择角色卡和世界书文件，它们会一起归入这个世界</li>
+              </ul>
+            ) : kind === 'character' ? (
               <ul className="list-disc pl-5 space-y-1">
                 <li>SillyTavern 角色卡 JSON（V2，兼容 V1 / V3）；卡内的世界书会一并导入并自动关联</li>
                 <li>通用 JSON（name / 昵称 / 性格 / 说话风格 / 背景故事 等字段）</li>
@@ -412,7 +476,7 @@ export default function ImportPage() {
 
           <div className="flex flex-col items-center mt-8 gap-2">
             <PrimaryButton onClick={() => fileRef.current?.click()} disabled={stage === 'reading'}>
-              {stage === 'reading' ? '正在读取…' : '从「文件」选择'}
+              {stage === 'reading' ? '正在读取…' : '选择文件'}
             </PrimaryButton>
             <div className="text-[11px] text-[var(--c-text-3)]">在 iPhone 上，请在弹出的菜单中选择「选取文件」</div>
           </div>
@@ -433,12 +497,69 @@ export default function ImportPage() {
   }
 
   /* ---- 预览 ---- */
-  const nothing = chars.length === 0 && books.length === 0
+  const nothing = chars.length === 0 && books.length === 0 && !world
 
   return (
     <div className="h-dvh flex flex-col">
       <NavBar title="导入预览" back />
       <div className="flex-1 min-h-0 overflow-y-auto pb-6">
+        {world && (
+          <div className="mx-3 mt-3 card overflow-hidden">
+            <WorldCover name={world.name || '新的世界'} className="h-[120px]">
+              <div className="absolute inset-0 cover-shade" />
+              <div className="absolute left-4 bottom-3 right-4 text-white">
+                <div className="eyebrow" style={{ color: 'rgba(255,255,255,0.78)' }}>
+                  New World
+                </div>
+                <div className="serif-zh mt-1 text-[20px] tracking-[0.16em] truncate">{world.name || '世界的名字'}</div>
+              </div>
+            </WorldCover>
+            <div className="p-3 space-y-3">
+              {!worldSource && (
+                <Notice tone="info">所选文件中没有世界设定，请为这个世界填写名称，设定可稍后补充。</Notice>
+              )}
+              {missingWorldName && <Notice tone="error">请填写世界名称</Notice>}
+              <label className="block">
+                <div className="text-xs text-[var(--c-text-2)] mb-1">世界名称</div>
+                <input
+                  value={world.name}
+                  maxLength={30}
+                  onChange={(e) => setWorld({ ...world, name: e.target.value })}
+                  placeholder="必填"
+                  className={inputCls}
+                />
+              </label>
+              <label className="block">
+                <div className="text-xs text-[var(--c-text-2)] mb-1">一句话简介</div>
+                <input
+                  value={world.tagline}
+                  maxLength={60}
+                  onChange={(e) => setWorld({ ...world, tagline: e.target.value })}
+                  placeholder="未填写"
+                  className={inputCls}
+                />
+              </label>
+              <label className="block">
+                <div className="text-xs text-[var(--c-text-2)] mb-1">世界设定</div>
+                <textarea
+                  value={world.description}
+                  rows={5}
+                  onChange={(e) => setWorld({ ...world, description: e.target.value })}
+                  placeholder="未填写"
+                  className={`${inputCls} resize-none leading-relaxed text-[14px]`}
+                />
+              </label>
+              {Object.keys(world.extensions).length > 0 && (
+                <Notice tone="info">另有无法对应的字段会原样保留在世界的扩展数据中。</Notice>
+              )}
+              {(chars.length > 0 || books.length > 0) && (
+                <div className="text-[11px] text-[var(--c-text-3)] leading-relaxed">
+                  下方勾选的角色将归入这个世界，世界书将与这个世界关联。
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         {errors.length > 0 && (
           <div className="mx-3 mt-3 card p-3 space-y-2">
             <div className="flex items-center gap-1.5 text-sm text-[var(--c-danger)]">
@@ -735,7 +856,7 @@ export default function ImportPage() {
         ))}
 
         <div className="mx-6 mt-2 text-[11px] text-[var(--c-text-3)] leading-relaxed">
-          世界书、角色人设与聊天记录分开保存。当前版本尚未接入 AI，世界书暂时不会影响对话。
+          世界、角色、世界书与聊天记录分开保存，只通过关联相连。当前版本尚未接入 AI，世界设定和世界书暂时不会影响对话。
         </div>
       </div>
 
@@ -747,14 +868,14 @@ export default function ImportPage() {
         {missingName && <div className="mb-2 text-xs text-[var(--c-danger)]">还有角色没有填写名称</div>}
         <div className="flex items-center gap-3">
           <div className="flex-1 text-xs text-[var(--c-text-2)]">
-            将导入角色 {savingChars.length} 个、世界书 {savingBooks.length} 本
+            将导入{world ? '世界 1 个、' : ''}角色 {savingChars.length} 个、世界书 {savingBooks.length} 本
           </div>
           <button onClick={reset} className="press text-sm text-[var(--c-text-2)] px-2">
             重选
           </button>
           <PrimaryButton
             onClick={() => void save()}
-            disabled={stage === 'saving' || missingName || savingChars.length + savingBooks.length === 0}
+            disabled={stage === 'saving' || !canSave}
           >
             {stage === 'saving' ? '保存中…' : '确认导入'}
           </PrimaryButton>

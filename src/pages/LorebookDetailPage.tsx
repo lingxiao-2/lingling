@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import NavBar from '../components/NavBar'
+import { Pencil } from 'lucide-react'
+import NavBar, { NavButton } from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import PickerSheet from '../components/PickerSheet'
 import { ConfirmDialog } from '../components/Sheet'
 import { Section } from '../components/ui'
 import { db } from '../db/db'
-import { deleteLorebook, linkLorebook, unlinkLorebook } from '../db/repo'
-import type { Character } from '../db/schema'
+import { deleteLorebook, linkLorebook, linkWorldLorebook, unlinkLorebook, unlinkWorldLorebook } from '../db/repo'
+import { DEFAULT_WORLD_ID } from '../db/schema'
+import type { Character, World } from '../db/schema'
 import { FORMAT_LABELS, type ImportFormat } from '../import/types'
 
 export default function LorebookDetailPage() {
@@ -21,6 +23,18 @@ export default function LorebookDetailPage() {
     [id],
     [] as string[],
   )
+  const allWorlds = useLiveQuery(
+    async () => (await db.worlds.toArray()).filter((w) => w.id !== DEFAULT_WORLD_ID),
+    [],
+    [] as World[],
+  )
+  const linkedWorldIds = useLiveQuery(
+    async () => (await db.worldLorebooks.where('lorebookId').equals(id).toArray()).map((l) => l.worldId),
+    [id],
+    [] as string[],
+  )
+  const [worldPicker, setWorldPicker] = useState(false)
+  const [unlinkWorld, setUnlinkWorld] = useState<World | null>(null)
   const [picker, setPicker] = useState(false)
   const [unlinkTarget, setUnlinkTarget] = useState<Character | null>(null)
   const [confirmDel, setConfirmDel] = useState(false)
@@ -38,6 +52,7 @@ export default function LorebookDetailPage() {
   }
 
   const linked = allChars.filter((c) => linkedIds.includes(c.id))
+  const linkedWorlds = allWorlds.filter((w) => linkedWorldIds.includes(w.id))
   const toggle = (i: number) =>
     setOpen((s) => {
       const n = new Set(s)
@@ -48,7 +63,15 @@ export default function LorebookDetailPage() {
 
   return (
     <div className="h-dvh flex flex-col">
-      <NavBar title={book.name} back />
+      <NavBar
+        title={book.name}
+        back
+        right={
+          <NavButton label="编辑世界书" onClick={() => nav(`/lorebook/${id}/edit`)}>
+            <Pencil size={19} strokeWidth={1.4} />
+          </NavButton>
+        }
+      />
       <div className="flex-1 min-h-0 overflow-y-auto pb-10">
         <div className="mx-3 mt-3 card p-4">
           <div className="text-lg font-medium break-words">{book.name}</div>
@@ -65,6 +88,27 @@ export default function LorebookDetailPage() {
               }）`}
           </div>
         </div>
+
+        <Section title="关联的世界">
+          {linkedWorlds.length === 0 && <div className="px-4 py-3 text-sm text-[var(--c-text-3)]">还没有关联任何世界</div>}
+          {linkedWorlds.map((w) => (
+            <div key={w.id} className="flex items-center gap-3 px-4 py-2.5 hairline-b">
+              <button onClick={() => nav(`/world/${w.id}`)} className="press flex-1 min-w-0 text-left">
+                <span className="serif-zh block text-[15px] tracking-wider truncate">{w.name}</span>
+                {w.tagline && <span className="block text-xs text-[var(--c-text-3)] truncate">{w.tagline}</span>}
+              </button>
+              <button
+                onClick={() => setUnlinkWorld(w)}
+                className="press shrink-0 text-xs text-[var(--c-text-2)] px-2.5 h-7 rounded-full border border-[var(--c-line)]"
+              >
+                解除关联
+              </button>
+            </div>
+          ))}
+          <button onClick={() => setWorldPicker(true)} className="press w-full h-11 text-[15px] text-[var(--c-accent-strong)]">
+            关联到世界
+          </button>
+        </Section>
 
         <Section title="关联的角色">
           {linked.length === 0 && <div className="px-4 py-3 text-sm text-[var(--c-text-3)]">还没有关联任何角色</div>}
@@ -139,6 +183,30 @@ export default function LorebookDetailPage() {
           }}
         />
       )}
+      {worldPicker && (
+        <PickerSheet
+          title="关联到世界"
+          showAvatar={false}
+          options={allWorlds
+            .filter((w) => !linkedWorldIds.includes(w.id))
+            .map((w) => ({ id: w.id, name: w.name, hint: w.tagline }))}
+          emptyText={allWorlds.length ? '所有世界都已关联' : '还没有世界，可在「联系人 → 世界」中新建'}
+          onClose={() => setWorldPicker(false)}
+          onConfirm={(ids) => void Promise.all(ids.map((wid) => linkWorldLorebook(wid, id)))}
+        />
+      )}
+      {unlinkWorld && (
+        <ConfirmDialog
+          title="解除关联？"
+          message={`这本世界书将不再关联「${unlinkWorld.name}」，世界和世界书都不会被删除。`}
+          confirmText="解除"
+          onCancel={() => setUnlinkWorld(null)}
+          onConfirm={() => {
+            void unlinkWorldLorebook(unlinkWorld.id, id)
+            setUnlinkWorld(null)
+          }}
+        />
+      )}
       {unlinkTarget && (
         <ConfirmDialog
           title="解除关联？"
@@ -154,13 +222,13 @@ export default function LorebookDetailPage() {
       {confirmDel && (
         <ConfirmDialog
           title={`删除「${book.name}」？`}
-          message="世界书及其全部条目会被永久删除，并解除与所有角色的关联。角色本身不受影响。"
+          message="世界书及其全部条目会被永久删除，并解除与所有世界和角色的关联。世界与角色本身不受影响。"
           confirmText="删除"
           danger
           onCancel={() => setConfirmDel(false)}
           onConfirm={async () => {
             await deleteLorebook(id)
-            nav('/lorebooks', { replace: true })
+            nav('/contacts?tab=lorebooks', { replace: true })
           }}
         />
       )}

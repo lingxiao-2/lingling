@@ -9,6 +9,7 @@ import PickerSheet from '../components/PickerSheet'
 import { PrimaryButton, Section } from '../components/ui'
 import { db } from '../db/db'
 import { deleteCharacter, getOrCreateSingleConversation, linkLorebook, unlinkLorebook } from '../db/repo'
+import { DEFAULT_WORLD_ID } from '../db/schema'
 import type { Lorebook } from '../db/schema'
 import { FORMAT_LABELS, type ImportFormat } from '../import/types'
 
@@ -37,6 +38,11 @@ export default function CharacterProfilePage() {
     [] as string[],
   )
   const linkedBooks = allBooks.filter((b) => linkedBookIds.includes(b.id))
+  const worldId = c?.worldId
+  const world = useLiveQuery(
+    async () => (worldId && worldId !== DEFAULT_WORLD_ID ? (await db.worlds.get(worldId)) ?? null : null),
+    [worldId],
+  )
 
   const chat = async () => {
     const convId = await getOrCreateSingleConversation(id)
@@ -70,6 +76,16 @@ export default function CharacterProfilePage() {
           <Avatar name={c.name} src={c.avatar} size={88} rounded={24} />
           <div className="text-xl font-medium">{c.name}</div>
           {c.bio && <div className="px-10 text-center text-sm text-[var(--c-text-2)]">{c.bio}</div>}
+          <button
+            onClick={() => (world ? nav(`/world/${world.id}`) : nav(`/character/${id}/edit`))}
+            className="press mt-1 flex items-center gap-2 text-[12px] tracking-[0.14em]"
+          >
+            <span className="h-px w-4 bg-[var(--c-brand-soft)]" />
+            <span className={world ? 'serif-zh text-[var(--c-brand)]' : 'text-[var(--c-text-3)]'}>
+              {world ? world.name : '未归入世界'}
+            </span>
+            <span className="h-px w-4 bg-[var(--c-brand-soft)]" />
+          </button>
         </div>
 
         <Section title="设定">

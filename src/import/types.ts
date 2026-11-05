@@ -32,6 +32,14 @@ export interface LoreEntryDraft {
   extensions: Extensions
 }
 
+/** 世界设定草稿 */
+export interface WorldDraft {
+  name: string
+  tagline: string
+  description: string
+  extensions: Extensions
+}
+
 export interface LorebookDraft {
   name: string
   description: string
@@ -66,6 +74,7 @@ export type ImportFormat =
   | 'st-character-book'
   | 'combo-json'
   | 'generic-json'
+  | 'world-json'
   | 'text'
   | 'markdown'
 
@@ -79,14 +88,16 @@ export interface ParsedFile {
   warnings: string[]
   /** 仅 TXT / Markdown 角色：可重新分配的段落；characters[0] 由它生成 */
   sections?: TextSection[]
+  /** 仅「世界」导入模式：文件中的世界设定 */
+  world?: WorldDraft
 }
 
 export type ParseOutcome =
   | { ok: true; file: ParsedFile }
   | { ok: false; fileName: string; error: string }
 
-/** 导入模式：决定 TXT / Markdown 被当作角色还是世界书 */
-export type ImportKind = 'character' | 'lorebook'
+/** 导入模式：决定 TXT / Markdown 被当作角色、世界书还是世界设定 */
+export type ImportKind = 'character' | 'lorebook' | 'world'
 
 export const FIELD_LABELS: Record<CharacterFieldKey, string> = {
   name: '角色名称',
@@ -104,8 +115,9 @@ export const FORMAT_LABELS: Record<ImportFormat, string> = {
   'st-card-v1': 'SillyTavern 角色卡 V1',
   'st-worldinfo': 'SillyTavern 世界书',
   'st-character-book': 'SillyTavern 角色内置世界书',
-  'combo-json': '组合 JSON（角色 + 世界书）',
+  'combo-json': '组合 JSON（世界 / 角色 / 世界书）',
   'generic-json': '通用 JSON',
+  'world-json': '世界设定 JSON',
   text: '纯文本 TXT',
   markdown: 'Markdown',
 }
@@ -122,4 +134,8 @@ export function emptyCharacterDraft(): CharacterDraft {
     exampleDialogue: '',
     extensions: {},
   }
+}
+
+export function emptyWorldDraft(): WorldDraft {
+  return { name: '', tagline: '', description: '', extensions: {} }
 }

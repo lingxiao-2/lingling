@@ -4,46 +4,75 @@ export interface SheetAction {
   label: string
   onClick: () => void
   danger?: boolean
+  /** 可选：左侧细线图标 */
+  icon?: ReactNode
+  /** 可选：标签下方的一行说明 */
+  hint?: string
 }
 
-/** 底部操作菜单 */
+/** 底部操作菜单。带 icon / hint 的选项以左对齐的列表样式呈现 */
 export function ActionSheet({
   title,
+  subtitle,
   actions,
   onClose,
 }: {
   title?: string
+  subtitle?: string
   actions: SheetAction[]
   onClose: () => void
 }) {
+  const rich = actions.some((a) => a.icon || a.hint)
   return (
     <div className="fixed inset-0 z-50 flex items-end" onClick={onClose}>
-      <div className="absolute inset-0 bg-[#1b2a3c]/30" />
+      <div className="absolute inset-0 bg-[#1b2a3c]/30 sheet-fade" />
       <div
-        className="relative w-full px-3"
+        className="relative w-full px-3 sheet-rise"
         style={{ paddingBottom: 'calc(var(--safe-bottom) + 12px)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="card overflow-hidden">
           {title && (
-            <div className="px-4 py-3 text-center text-xs text-[var(--c-text-3)] hairline-b truncate">
-              {title}
+            <div className={`px-5 hairline-b ${rich ? 'pt-4 pb-3 text-left' : 'py-3 text-center'}`}>
+              <div className={rich ? 'sheet-title' : 'text-xs text-[var(--c-text-3)] truncate'}>{title}</div>
+              {subtitle && <div className="mt-1 text-xs text-[var(--c-text-3)]">{subtitle}</div>}
             </div>
           )}
-          {actions.map((a, i) => (
-            <button
-              key={a.label}
-              onClick={() => {
-                onClose()
-                a.onClick()
-              }}
-              className={`press w-full h-12 text-[16px] ${i > 0 ? 'hairline-t' : ''} ${
-                a.danger ? 'text-[var(--c-danger)]' : ''
-              }`}
-            >
-              {a.label}
-            </button>
-          ))}
+          {actions.map((a, i) =>
+            rich ? (
+              <button
+                key={a.label}
+                onClick={() => {
+                  onClose()
+                  a.onClick()
+                }}
+                className={`press w-full flex items-center gap-4 px-5 py-3.5 text-left ${i > 0 ? 'hairline-t' : ''}`}
+              >
+                {a.icon && (
+                  <span className="h-10 w-10 shrink-0 rounded-full bg-[var(--c-accent-soft)] text-[var(--c-accent-strong)] flex items-center justify-center">
+                    {a.icon}
+                  </span>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className={`block text-[16px] ${a.danger ? 'text-[var(--c-danger)]' : ''}`}>{a.label}</span>
+                  {a.hint && <span className="block mt-0.5 text-xs text-[var(--c-text-3)] truncate">{a.hint}</span>}
+                </span>
+              </button>
+            ) : (
+              <button
+                key={a.label}
+                onClick={() => {
+                  onClose()
+                  a.onClick()
+                }}
+                className={`press w-full h-12 text-[16px] ${i > 0 ? 'hairline-t' : ''} ${
+                  a.danger ? 'text-[var(--c-danger)]' : ''
+                }`}
+              >
+                {a.label}
+              </button>
+            ),
+          )}
         </div>
         <button onClick={onClose} className="press card w-full h-12 mt-2 text-[16px]">
           取消

@@ -127,3 +127,15 @@ export function AreaField({
     </label>
   )
 }
+
+/** 安静的空状态：英文小字 + 中文衬线标题 + 一行提示，不放大按钮 */
+export function QuietEmpty({ eyebrow, title, hint }: { eyebrow: string; title: string; hint?: string }) {
+  return (
+    <div className="flex flex-col items-center text-center px-10 pt-20 pb-16">
+      <div className="eyebrow">{eyebrow}</div>
+      <div className="serif-zh mt-3 text-[19px] tracking-[0.12em] text-[var(--c-brand)]">{title}</div>
+      <div className="mt-4 h-px w-8 bg-[var(--c-brand-soft)]/60" />
+      {hint && <div className="mt-4 text-xs leading-relaxed text-[var(--c-text-3)]">{hint}</div>}
+    </div>
+  )
+}
