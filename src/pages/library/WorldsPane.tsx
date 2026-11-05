@@ -36,7 +36,7 @@ export default function WorldsPane() {
       <QuietEmpty
         eyebrow="Private Worlds"
         title="你的第一个世界"
-        hint="轻点右上角 ＋，写下一个世界的名字与设定，或从本地文件导入世界、角色与世界书"
+        hint="轻点右上角 ＋，新建世界或从本地文件导入"
       />
     )
   }

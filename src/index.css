@@ -44,14 +44,15 @@ body {
   overscroll-behavior-y: none;
 }
 
-button {
-  font: inherit;
-  color: inherit;
-}
-input,
-textarea {
-  font: inherit;
-  color: inherit;
+/* 放在 base 层：未分层的规则优先级高于 Tailwind 工具类，会让按钮上的 text-* 颜色与字号失效 */
+@layer base {
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
 }
 
 .glass {
