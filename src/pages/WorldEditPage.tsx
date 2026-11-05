@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { ImagePlus } from 'lucide-react'
+import { Icon } from '../theme/icons'
 import NavBar from '../components/NavBar'
 import WorldCover from '../components/WorldCover'
 import { AreaField, PrimaryButton, Section, TextField } from '../components/ui'
@@ -75,7 +75,7 @@ export default function WorldEditPage() {
                 <div className="mt-1 text-[12px] text-white/85 truncate">{form.tagline || '一句话写下它的气质'}</div>
               </div>
               <span className="absolute top-3 right-3 h-8 px-3 rounded-full bg-white/70 backdrop-blur text-[12px] text-[var(--c-brand)] flex items-center gap-1.5">
-                <ImagePlus size={14} strokeWidth={1.5} /> {form.cover ? '更换封面' : '上传封面'}
+                <Icon name="image" size="xs" /> {form.cover ? '更换封面' : '上传封面'}
               </span>
             </WorldCover>
           </button>

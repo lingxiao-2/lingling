@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { ChevronRight } from 'lucide-react'
+import { Icon } from '../theme/icons'
 import NavBar from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import { Row, Section } from '../components/ui'
@@ -25,17 +25,21 @@ export default function MePage() {
           onClick={() => nav('/me/profile')}
           className="press card mx-3 mt-3 w-[calc(100%-1.5rem)] p-4 flex items-center gap-4 text-left"
         >
-          <Avatar name={profile.nickname} src={profile.avatar} size={64} rounded={16} />
+          <Avatar name={profile.nickname} src={profile.avatar} size={56} />
           <div className="flex-1 min-w-0">
             <div className="text-lg font-medium truncate">{profile.nickname}</div>
             <div className="text-sm text-[var(--c-text-3)] truncate">{profile.signature || '写一句签名吧'}</div>
           </div>
-          <ChevronRight size={18} className="text-[var(--c-text-3)]" />
+          <Icon name="forward" size="sm" className="text-[var(--c-text-3)]" />
         </button>
 
         <Section title="外观">
-          <Row label="主题" value="Winter Letter · 冬日来信" />
-          <Row label="更多主题" value="后续版本" />
+          <Row
+            label="主题与壁纸"
+            onClick={() => nav('/me/theme')}
+            value="冬日来信"
+            right={<Icon name="forward" size="sm" />}
+          />
         </Section>
 
         <Section title="AI 服务">
@@ -43,7 +47,7 @@ export default function MePage() {
             label="API 设置"
             onClick={() => nav('/me/api')}
             value={ai.apiKey ? ai.model : '未配置'}
-            right={<ChevronRight size={16} />}
+            right={<Icon name="forward" size="sm" />}
           />
         </Section>
 

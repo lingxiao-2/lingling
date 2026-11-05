@@ -25,7 +25,7 @@ export function ActionSheet({
   const rich = actions.some((a) => a.icon || a.hint)
   return (
     <div className="fixed inset-0 z-50 flex items-end" onClick={onClose}>
-      <div className="absolute inset-0 bg-[#1b2a3c]/30 sheet-fade" />
+      <div className="absolute inset-0 sheet-overlay sheet-fade" />
       <div
         className="relative w-full px-3 sheet-rise"
         style={{ paddingBottom: 'calc(var(--safe-bottom) + 12px)' }}
@@ -46,15 +46,15 @@ export function ActionSheet({
                   onClose()
                   a.onClick()
                 }}
-                className={`press w-full flex items-center gap-4 px-5 py-3.5 text-left ${i > 0 ? 'hairline-t' : ''}`}
+                className={`press w-full flex items-center gap-3.5 px-5 py-3 text-left ${i > 0 ? 'hairline-t' : ''}`}
               >
                 {a.icon && (
-                  <span className="h-10 w-10 shrink-0 rounded-full bg-[var(--c-accent-soft)] text-[var(--c-accent-strong)] flex items-center justify-center">
+                  <span className="h-8 w-8 shrink-0 rounded-full bg-[var(--c-accent-soft)] text-[var(--c-accent-strong)] flex items-center justify-center">
                     {a.icon}
                   </span>
                 )}
                 <span className="min-w-0 flex-1">
-                  <span className={`block text-[16px] ${a.danger ? 'text-[var(--c-danger)]' : ''}`}>{a.label}</span>
+                  <span className={`block text-[15px] ${a.danger ? 'text-[var(--c-danger)]' : ''}`}>{a.label}</span>
                   {a.hint && <span className="block mt-0.5 text-xs text-[var(--c-text-3)] truncate">{a.hint}</span>}
                 </span>
               </button>
@@ -65,7 +65,7 @@ export function ActionSheet({
                   onClose()
                   a.onClick()
                 }}
-                className={`press w-full h-12 text-[16px] ${i > 0 ? 'hairline-t' : ''} ${
+                className={`press w-full h-12 text-[15px] ${i > 0 ? 'hairline-t' : ''} ${
                   a.danger ? 'text-[var(--c-danger)]' : ''
                 }`}
               >
@@ -74,7 +74,7 @@ export function ActionSheet({
             ),
           )}
         </div>
-        <button onClick={onClose} className="press card w-full h-12 mt-2 text-[16px]">
+        <button onClick={onClose} className="press card w-full h-12 mt-2 text-[15px] text-[var(--c-text-2)]">
           取消
         </button>
       </div>
@@ -100,19 +100,19 @@ export function ConfirmDialog({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-8" onClick={onCancel}>
-      <div className="absolute inset-0 bg-[#1b2a3c]/35" />
+      <div className="absolute inset-0 sheet-overlay sheet-fade" />
       <div className="card relative w-full max-w-xs overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 pt-5 pb-4 text-center">
-          <div className="text-[16px] font-medium">{title}</div>
+          <div className="serif-zh text-[16px] tracking-[0.06em] text-[var(--c-brand)]">{title}</div>
           {message && <div className="mt-2 text-sm text-[var(--c-text-2)] leading-relaxed">{message}</div>}
         </div>
         <div className="grid grid-cols-2 hairline-t">
-          <button onClick={onCancel} className="press h-12 text-[16px] text-[var(--c-text-2)]">
+          <button onClick={onCancel} className="press h-12 text-[15px] text-[var(--c-text-2)]">
             取消
           </button>
           <button
             onClick={onConfirm}
-            className={`press h-12 text-[16px] border-l border-[var(--c-line)] ${
+            className={`press h-12 text-[15px] border-l border-[var(--c-line)] ${
               danger ? 'text-[var(--c-danger)]' : 'text-[var(--c-accent-strong)]'
             }`}
           >

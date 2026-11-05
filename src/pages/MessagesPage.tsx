@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Pin } from 'lucide-react'
+import { Icon } from '../theme/icons'
 import { db } from '../db/db'
 import { deleteConversation, setPinned } from '../db/repo'
 import type { Character, Conversation } from '../db/schema'
@@ -38,7 +38,7 @@ function ConvRow({
       }`}
     >
       <div className="relative">
-        <Avatar name={name} src={character?.avatar} size={48} />
+        <Avatar name={name} src={character?.avatar} size="list" />
         {conv.unread > 0 && (
           <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--c-danger)] text-white text-[11px] leading-[18px] text-center">
             {conv.unread > 99 ? '99+' : conv.unread}
@@ -49,7 +49,7 @@ function ConvRow({
         <div className="flex items-center justify-between gap-2">
           <span className="text-[16px] truncate">{name}</span>
           <span className="shrink-0 text-[11px] text-[var(--c-text-3)] flex items-center gap-1">
-            {conv.pinned && <Pin size={11} strokeWidth={1.8} />}
+            {conv.pinned && <Icon name="pin" size="xs" stroke="thin" />}
             {formatListTime(conv.lastMessageAt)}
           </span>
         </div>

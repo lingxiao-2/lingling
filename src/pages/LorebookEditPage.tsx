@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Plus, Trash2 } from 'lucide-react'
+import { Icon } from '../theme/icons'
 import NavBar from '../components/NavBar'
 import { AreaField, PrimaryButton, Section, TextField } from '../components/ui'
 import { db } from '../db/db'
@@ -139,7 +139,7 @@ export default function LorebookEditPage() {
                 onClick={() => setEntries((list) => list.filter((_, j) => j !== i))}
                 className="press h-8 w-8 flex items-center justify-center text-[var(--c-text-3)]"
               >
-                <Trash2 size={16} strokeWidth={1.5} />
+                <Icon name="delete" size="sm" />
               </button>
             </div>
             <input
@@ -172,7 +172,7 @@ export default function LorebookEditPage() {
           onClick={() => setEntries((list) => [...list, blankEntry()])}
           className="press mx-3 w-[calc(100%-1.5rem)] h-11 rounded-2xl border border-dashed border-[var(--c-accent)]/50 text-[14px] text-[var(--c-accent-strong)] flex items-center justify-center gap-1.5"
         >
-          <Plus size={16} strokeWidth={1.5} /> 添加条目
+          <Icon name="plus" size="sm" /> 添加条目
         </button>
 
         <div className="flex justify-center mt-7">

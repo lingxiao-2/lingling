@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Pencil } from 'lucide-react'
 import NavBar, { NavButton } from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import PickerSheet from '../components/PickerSheet'
@@ -67,9 +66,7 @@ export default function LorebookDetailPage() {
         title={book.name}
         back
         right={
-          <NavButton label="编辑世界书" onClick={() => nav(`/lorebook/${id}/edit`)}>
-            <Pencil size={19} strokeWidth={1.4} />
-          </NavButton>
+          <NavButton label="编辑世界书" icon="edit" onClick={() => nav(`/lorebook/${id}/edit`)} />
         }
       />
       <div className="flex-1 min-h-0 overflow-y-auto pb-10">
@@ -115,7 +112,7 @@ export default function LorebookDetailPage() {
           {linked.map((c) => (
             <div key={c.id} className="flex items-center gap-3 px-4 py-2.5 hairline-b">
               <button onClick={() => nav(`/character/${c.id}`)} className="press">
-                <Avatar name={c.name} src={c.avatar} size={36} rounded={10} />
+                <Avatar name={c.name} src={c.avatar} size="picker" />
               </button>
               <span className="flex-1 min-w-0 truncate text-[15px]">{c.name}</span>
               <button

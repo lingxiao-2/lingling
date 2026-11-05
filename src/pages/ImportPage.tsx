@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { AlertCircle, Check, ChevronDown, ChevronUp, FileText, Link2 } from 'lucide-react'
+import { Icon } from '../theme/icons'
 import NavBar from '../components/NavBar'
 import PickerSheet from '../components/PickerSheet'
 import WorldCover from '../components/WorldCover'
@@ -105,11 +105,11 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
       aria-label={label}
       aria-pressed={on}
       onClick={onClick}
-      className={`press shrink-0 h-6 w-6 rounded-full flex items-center justify-center border ${
+      className={`press shrink-0 h-5 w-5 rounded-full flex items-center justify-center border ${
         on ? 'bg-[var(--c-accent)] border-[var(--c-accent)] text-white' : 'border-[var(--c-text-3)] bg-white'
       }`}
     >
-      {on && <Check size={14} strokeWidth={2.2} />}
+      {on && <Icon name="check" size="xs" stroke="bold" />}
     </button>
   )
 }
@@ -380,7 +380,7 @@ export default function ImportPage() {
         <NavBar title="导入完成" back={summary.worldId ? '/contacts?tab=worlds' : '/contacts'} />
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center px-8 pt-16 gap-3 text-center">
           <div className="h-14 w-14 rounded-full bg-[var(--c-accent-soft)] flex items-center justify-center text-[var(--c-accent-strong)]">
-            <Check size={28} strokeWidth={1.8} />
+            <Icon name="check" size="lg" />
           </div>
           <div className="text-lg">已保存到本设备</div>
           <div className="text-sm text-[var(--c-text-2)] leading-relaxed">
@@ -563,7 +563,7 @@ export default function ImportPage() {
         {errors.length > 0 && (
           <div className="mx-3 mt-3 card p-3 space-y-2">
             <div className="flex items-center gap-1.5 text-sm text-[var(--c-danger)]">
-              <AlertCircle size={16} /> {errors.length} 个文件无法导入
+              <Icon name="alert" size="sm" /> {errors.length} 个文件无法导入
             </div>
             {errors.map((e, i) => (
               <div key={i} className="text-xs leading-relaxed">
@@ -581,7 +581,7 @@ export default function ImportPage() {
         {files.map((f) => (
           <section key={f.index} className="mx-3 mt-4">
             <div className="flex items-center gap-1.5 px-1 pb-1.5 text-xs text-[var(--c-text-3)]">
-              <FileText size={13} />
+              <Icon name="file" size="xs" />
               <span className="truncate">{f.fileName}</span>
               <span className="shrink-0">· {FORMAT_LABELS[f.format]}</span>
             </div>
@@ -626,7 +626,7 @@ export default function ImportPage() {
                         onClick={() => patchChar(c.key, (x) => ({ ...x, expanded: !x.expanded }))}
                         className="press h-8 w-8 flex items-center justify-center text-[var(--c-text-3)]"
                       >
-                        {c.expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                        <Icon name={c.expanded ? 'collapse' : 'expand'} size="md" />
                       </button>
                     </div>
 
@@ -646,7 +646,7 @@ export default function ImportPage() {
                       )}
                       {linkedBooks.length > 0 && (
                         <div className="text-xs text-[var(--c-text-2)] flex items-center gap-1">
-                          <Link2 size={12} /> 将关联世界书：{linkedBooks.map((b) => b.draft.name).join('、')}
+                          <Icon name="link" size="xs" /> 将关联世界书：{linkedBooks.map((b) => b.draft.name).join('、')}
                         </div>
                       )}
                     </div>
@@ -762,7 +762,7 @@ export default function ImportPage() {
                         onClick={() => patchBook(b.key, (x) => ({ ...x, expanded: !x.expanded }))}
                         className="press h-8 w-8 flex items-center justify-center text-[var(--c-text-3)]"
                       >
-                        {b.expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                        <Icon name={b.expanded ? 'collapse' : 'expand'} size="md" />
                       </button>
                     </div>
 

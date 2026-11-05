@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { BookOpen, FileDown, Globe, PenLine, UserRound } from 'lucide-react'
+import { Icon, type IconName } from '../theme/icons'
 import NavBar, { PlusButton } from '../components/NavBar'
 import { ActionSheet } from '../components/Sheet'
 import type { SheetAction } from '../components/Sheet'
@@ -23,17 +23,17 @@ export default function ContactsPage() {
   const tab: Tab = raw === 'worlds' || raw === 'lorebooks' ? raw : 'characters'
   const [sheet, setSheet] = useState(false)
 
-  const icon = (I: typeof PenLine) => <I size={19} strokeWidth={1.4} />
+  const icon = (name: IconName) => <Icon name={name} />
   const menus: Record<Tab, { title: string; subtitle: string; actions: SheetAction[] }> = {
     characters: {
       title: '添加角色',
       subtitle: '角色拥有独立的人设与聊天',
       actions: [
-        { label: '新建', hint: '从空白开始设定一个角色', icon: icon(UserRound), onClick: () => nav('/character/new') },
+        { label: '新建', hint: '从空白开始设定一个角色', icon: icon('character'), onClick: () => nav('/character/new') },
         {
           label: '从本地文件导入',
           hint: 'SillyTavern 角色卡、JSON、TXT、Markdown',
-          icon: icon(FileDown),
+          icon: icon('import'),
           onClick: () => nav('/import?kind=character'),
         },
       ],
@@ -42,11 +42,11 @@ export default function ContactsPage() {
       title: '添加世界',
       subtitle: '世界收纳居民角色与世界书',
       actions: [
-        { label: '新建', hint: '写下世界的名字与设定', icon: icon(Globe), onClick: () => nav('/world/new') },
+        { label: '新建', hint: '写下世界的名字与设定', icon: icon('world'), onClick: () => nav('/world/new') },
         {
           label: '从本地文件导入',
           hint: '世界设定，以及其中的角色与世界书',
-          icon: icon(FileDown),
+          icon: icon('import'),
           onClick: () => nav('/import?kind=world'),
         },
       ],
@@ -55,11 +55,11 @@ export default function ContactsPage() {
       title: '添加世界书',
       subtitle: '以关键词组织的设定条目',
       actions: [
-        { label: '新建', hint: '手动编写条目', icon: icon(BookOpen), onClick: () => nav('/lorebook/new') },
+        { label: '新建', hint: '手动编写条目', icon: icon('lorebook'), onClick: () => nav('/lorebook/new') },
         {
           label: '从本地文件导入',
           hint: 'SillyTavern 世界书、JSON、Markdown、TXT',
-          icon: icon(FileDown),
+          icon: icon('import'),
           onClick: () => nav('/import?kind=lorebook'),
         },
       ],

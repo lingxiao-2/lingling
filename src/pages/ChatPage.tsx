@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { ArrowDown, Send, UserRound } from 'lucide-react'
+import { Icon } from '../theme/icons'
 import { db } from '../db/db'
 import { markRead, saveDraft, sendUserMessage, softDeleteMessage } from '../db/repo'
 import type { Message } from '../db/schema'
@@ -50,7 +50,7 @@ function Bubble({
   const press = useLongPress(onMenu)
   return (
     <div className={`flex items-start gap-2.5 px-3 ${mine ? 'flex-row-reverse' : ''}`}>
-      <Avatar name={name} src={avatar} size={38} rounded={10} />
+      <Avatar name={name} src={avatar} size="chat" />
       <div className={`flex flex-col max-w-[72%] ${mine ? 'items-end' : 'items-start'}`}>
         <div
           {...press}
@@ -208,9 +208,7 @@ export default function ChatPage() {
         back="/"
         right={
           charId && (
-            <NavButton label="角色资料" onClick={() => nav(`/character/${charId}`)}>
-              <UserRound size={21} strokeWidth={1.5} />
-            </NavButton>
+            <NavButton label="角色资料" icon="more" onClick={() => nav(`/character/${charId}`)} />
           )
         }
       />
@@ -253,7 +251,7 @@ export default function ChatPage() {
             onClick={() => scrollToBottom(true)}
             className="press absolute right-4 bottom-3 h-9 pl-3 pr-3.5 rounded-full glass shadow-md flex items-center gap-1 text-xs text-[var(--c-accent-strong)]"
           >
-            <ArrowDown size={14} />
+            <Icon name="scrollDown" size="xs" />
             回到底部
           </button>
         )}
@@ -280,7 +278,7 @@ export default function ChatPage() {
             disabled={!text.trim()}
             className="press h-10 w-10 shrink-0 rounded-full bg-[var(--c-accent)] text-white flex items-center justify-center disabled:opacity-35"
           >
-            <Send size={18} strokeWidth={1.7} />
+            <Icon name="send" size="md" />
           </button>
         </div>
       </footer>

@@ -44,7 +44,7 @@ export default function ProfileEditPage() {
       <div className="flex-1 min-h-0 overflow-y-auto pb-10">
         <div className="flex justify-center pt-6">
           <button onClick={() => fileRef.current?.click()} className="press flex flex-col items-center gap-2">
-            <Avatar name={nickname || '我'} src={avatar} size={84} rounded={22} />
+            <Avatar name={nickname || '我'} src={avatar} size="profile" />
             <span className="text-xs text-[var(--c-accent-strong)]">更换头像</span>
           </button>
           <input

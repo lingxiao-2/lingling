@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, Plus } from 'lucide-react'
+import { Icon, type IconName } from '../theme/icons'
 
 interface Props {
   title: ReactNode
@@ -9,31 +9,31 @@ interface Props {
   subtitle?: ReactNode
   /** 左右两侧的宽度（像素），右侧按钮较多时加宽，保持标题居中 */
   sideWidth?: number
+  /** 标题使用中文衬线（默认），品牌标题等自定义节点不受影响 */
+  serifTitle?: boolean
 }
 
-export default function NavBar({ title, back, right, subtitle, sideWidth = 64 }: Props) {
+/**
+ * 顶部导航：悬浮的毛玻璃胶囊。左右是 30px 小圆钮，中间标题 + 可选副标题。
+ */
+export default function NavBar({ title, back, right, subtitle, sideWidth = 56, serifTitle = true }: Props) {
   const nav = useNavigate()
   const goBack = () => (typeof back === 'string' ? nav(back) : nav(-1))
   return (
-    <header
-      className="glass hairline-b shrink-0 relative z-10"
-      style={{ paddingTop: 'var(--safe-top)' }}
-    >
-      <div className="h-12 flex items-center px-2 relative">
+    <header className="shrink-0 relative z-10 px-3 pb-1.5" style={{ paddingTop: 'calc(var(--safe-top) + 6px)' }}>
+      <div className="glass-1 h-12 rounded-full flex items-center px-1 shadow-[var(--shadow-soft)]">
         <div className="flex items-center shrink-0" style={{ width: sideWidth }}>
-          {back && (
-            <button
-              aria-label="返回"
-              onClick={goBack}
-              className="press h-10 w-10 flex items-center justify-center rounded-full"
-            >
-              <ChevronLeft size={24} strokeWidth={1.6} />
-            </button>
-          )}
+          {back && <NavButton label="返回" icon="back" onClick={goBack} />}
         </div>
         <div className="flex-1 min-w-0 text-center">
-          <div className="text-[16px] font-medium truncate leading-tight">{title}</div>
-          {subtitle && <div className="text-[11px] text-[var(--c-text-3)] truncate">{subtitle}</div>}
+          <div
+            className={`truncate leading-tight text-[var(--c-text)] ${
+              serifTitle && typeof title === 'string' ? 'serif-zh text-[17px] tracking-[0.06em]' : 'text-[16px]'
+            }`}
+          >
+            {title}
+          </div>
+          {subtitle && <div className="mt-0.5 text-[11px] text-[var(--c-text-2)] truncate tracking-wide">{subtitle}</div>}
         </div>
         <div className="flex items-center justify-end shrink-0" style={{ width: sideWidth }}>
           {right}
@@ -43,37 +43,28 @@ export default function NavBar({ title, back, right, subtitle, sideWidth = 64 }:
   )
 }
 
+/** 导航栏小圆钮：视觉 30px，点击区域 40px */
 export function NavButton({
   label,
   onClick,
+  icon,
   children,
 }: {
   label: string
   onClick: () => void
-  children: ReactNode
+  icon?: IconName
+  children?: ReactNode
 }) {
   return (
-    <button
-      aria-label={label}
-      onClick={onClick}
-      className="press h-10 w-10 flex items-center justify-center rounded-full"
-    >
-      {children}
+    <button aria-label={label} onClick={onClick} className="press h-10 w-10 shrink-0 flex items-center justify-center">
+      <span className="h-[30px] w-[30px] rounded-full bg-white/45 border border-[var(--glass-border)] flex items-center justify-center text-[var(--c-text)]">
+        {icon ? <Icon name={icon} size="md" /> : children}
+      </span>
     </button>
   )
 }
 
-/** 右上角精致的「+」入口：细线图标 + 发丝描边圆环 */
+/** 右上角「＋」入口 */
 export function PlusButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      aria-label={label}
-      onClick={onClick}
-      className="press h-10 w-10 flex items-center justify-center rounded-full"
-    >
-      <span className="h-[30px] w-[30px] rounded-full border border-[var(--c-accent)]/45 bg-white/60 flex items-center justify-center text-[var(--c-accent-strong)]">
-        <Plus size={17} strokeWidth={1.4} />
-      </span>
-    </button>
-  )
+  return <NavButton label={label} icon="plus" onClick={onClick} />
 }
