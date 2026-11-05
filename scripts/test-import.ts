@@ -167,15 +167,15 @@ test('缺少名称时用文件名并提示', () => {
   assert.ok(f.warnings.some((w) => w.includes('缺少名称')))
 })
 
-test('错误：空文件、错误 JSON、无法识别、PNG、不支持的扩展名', () => {
+test('错误：空文件、错误 JSON、无法识别、非文本扩展名', () => {
   assert.match(err('a.json', '   \n'), /文件为空/)
   assert.match(err('a.txt', '﻿'), /文件为空/)
   assert.match(err('a.json', '{"name": '), /JSON 格式错误/)
   assert.match(err('a.json', '{"foo": 1}'), /无法识别/)
   assert.match(err('a.json', '"text"'), /顶层/)
   assert.match(err('a.json', '[]'), /数组为空/)
-  assert.match(err('card.png', 'xxx'), /PNG/)
-  assert.match(err('a.yaml', 'name: x'), /暂不支持/)
+  // 二进制与 YAML 走 importFile() 管线，见 test-files.ts
+  assert.match(err('card.png', 'xxx'), /不是文本格式/)
 })
 
 test('Markdown 角色：一级标题作名称，已知标题自动归属，未知标题放入背景', () => {
@@ -237,7 +237,7 @@ test('段落重新归属', () => {
   assert.equal(draftFromSections(ignored, 'x').backstory, '')
 })
 
-test('Markdown 世界书：标题为条目与关键词', () => {
+test('Markdown 世界书：标题为条目名，不自动生成关键词', () => {
   const md = `# 雪城纪事
 
 关于雪城的一切。
@@ -254,7 +254,8 @@ test('Markdown 世界书：标题为条目与关键词', () => {
   assert.equal(b.description, '关于雪城的一切。')
   assert.equal(b.entries.length, 2)
   assert.equal(b.entries[0].name, '钟楼')
-  assert.deepEqual(b.entries[0].keys, ['钟楼'])
+  assert.deepEqual(b.entries[0].keys, [])
+  assert.ok(f.warnings.some((w) => w.includes('没有关键词')))
   assert.match(b.entries[1].content, /滑冰/)
 })
 

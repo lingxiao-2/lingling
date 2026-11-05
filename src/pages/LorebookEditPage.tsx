@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Icon } from '../theme/icons'
-import NavBar from '../components/NavBar'
+import NavBar, { NavButton } from '../components/NavBar'
+import { useFormImport } from '../import/useFormImport'
 import { AreaField, PrimaryButton, Section, TextField } from '../components/ui'
 import { db } from '../db/db'
 import { createLorebook, updateLorebook } from '../db/repo'
@@ -46,6 +47,33 @@ export default function LorebookEditPage() {
   const [entries, setEntries] = useState<EntryForm[]>(() => (id ? [] : [blankEntry()]))
   const [saving, setSaving] = useState(false)
   const loaded = useRef(false)
+
+  /** 从本地文件读取条目：追加到当前条目之后，不替换已有条目 */
+  const fileImport = useFormImport(
+    'lorebook',
+    (f) => {
+      const n = f.lorebooks.reduce((s, b) => s + b.entries.length, 0)
+      return n ? `读取到 ${n} 个条目，将追加到当前条目之后。缺少关键词的条目请手动补充或设为常驻。` : '文件中没有世界书条目。'
+    },
+    (f) => {
+      const book = f.lorebooks[0]
+      if (!book) return
+      if (!name.trim()) setName(book.name)
+      if (!description.trim() && book.description) setDescription(book.description)
+      const incoming: EntryForm[] = f.lorebooks.flatMap((b) =>
+        b.entries.map((e) => ({
+          name: e.name,
+          keysText: e.keys.join('，'),
+          content: e.content,
+          enabled: e.enabled,
+          constant: e.constant,
+          secondaryKeys: e.secondaryKeys,
+          extensions: e.extensions,
+        })),
+      )
+      setEntries((list) => [...list.filter((e) => e.name.trim() || e.content.trim() || e.keysText.trim()), ...incoming])
+    },
+  )
 
   useEffect(() => {
     if (loaded.current || !existing) return
@@ -110,7 +138,12 @@ export default function LorebookEditPage() {
 
   return (
     <div className="h-dvh flex flex-col">
-      <NavBar title={id ? '编辑世界书' : '新建世界书'} back />
+      <NavBar
+        title={id ? '编辑世界书' : '新建世界书'}
+        back
+        right={<NavButton label="从本地文件导入" icon="import" onClick={fileImport.open} />}
+      />
+      {fileImport.ui}
       <div className="flex-1 min-h-0 overflow-y-auto pb-10">
         <Section>
           <TextField label="名称（必填）" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="例如：雪城地理" />

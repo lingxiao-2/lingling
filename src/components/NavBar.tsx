@@ -21,7 +21,7 @@ export default function NavBar({ title, back, right, subtitle, sideWidth = 56, s
   const goBack = () => (typeof back === 'string' ? nav(back) : nav(-1))
   return (
     <header className="shrink-0 relative z-10 px-3 pb-1.5" style={{ paddingTop: 'calc(var(--safe-top) + 6px)' }}>
-      <div className="glass-1 h-12 rounded-full flex items-center px-1 shadow-[var(--shadow-soft)]">
+      <div className="glass-1 h-11 rounded-full flex items-center px-1 shadow-[var(--shadow-soft)]">
         <div className="flex items-center shrink-0" style={{ width: sideWidth }}>
           {back && <NavButton label="返回" icon="back" onClick={goBack} />}
         </div>
@@ -57,8 +57,8 @@ export function NavButton({
 }) {
   return (
     <button aria-label={label} onClick={onClick} className="press h-10 w-10 shrink-0 flex items-center justify-center">
-      <span className="h-[30px] w-[30px] rounded-full bg-white/45 border border-[var(--glass-border)] flex items-center justify-center text-[var(--c-text)]">
-        {icon ? <Icon name={icon} size="md" /> : children}
+      <span className="h-[28px] w-[28px] rounded-full bg-white/45 border border-[var(--glass-border)] flex items-center justify-center text-[var(--c-text)]">
+        {icon ? <Icon name={icon} size="sm" /> : children}
       </span>
     </button>
   )

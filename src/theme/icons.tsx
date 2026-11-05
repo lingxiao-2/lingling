@@ -21,6 +21,10 @@ import {
   MessageCircle,
   MoreHorizontal,
   Palette,
+  Database,
+  Info,
+  KeyRound,
+  Archive,
   Pencil,
   Pin,
   Plus,
@@ -58,6 +62,10 @@ const REGISTRY = {
   scrollDown: ArrowDown,
   pin: Pin,
   theme: Palette,
+  data: Database,
+  info: Info,
+  key: KeyRound,
+  backup: Archive,
   // 实体
   character: UserRound,
   people: Users,
@@ -92,4 +100,37 @@ export function Icon({
 }) {
   const C = overrides[name] ?? REGISTRY[name]
   return <C size={ICON.size[size]} strokeWidth={ICON.stroke[stroke]} className={className} />
+}
+
+/**
+ * 预留：用图片作为图标（例如用户上传的美化图标包）。
+ * 图片按图标尺寸显示；单色图标可通过 CSS mask 跟随文字颜色。
+ */
+export function imageIcon(url: string): ComponentType<IconProps> {
+  return function ImageIcon({ size = 18, className }: IconProps) {
+    return (
+      <span
+        aria-hidden="true"
+        className={className}
+        style={{
+          display: 'inline-block',
+          width: size,
+          height: size,
+          backgroundColor: 'currentColor',
+          WebkitMask: `url("${url}") center / contain no-repeat`,
+          mask: `url("${url}") center / contain no-repeat`,
+        }}
+      />
+    )
+  }
+}
+
+/** 把主题设置中的 customIcons（图标名 → 图片地址）注册为图标；未知名称会被忽略 */
+export function applyCustomIcons(map: Record<string, string> | undefined) {
+  if (!map) return
+  const next: Partial<Record<IconName, ComponentType<IconProps>>> = {}
+  for (const [name, url] of Object.entries(map)) {
+    if (name in REGISTRY && typeof url === 'string' && url) next[name as IconName] = imageIcon(url)
+  }
+  registerIcons(next)
 }
