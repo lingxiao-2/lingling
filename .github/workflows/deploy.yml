@@ -1,0 +1,47 @@
+name: Build & Deploy Preview
+
+# 所有分支：类型检查 → 构建（验证代码能通过）。
+# 仅 main：额外发布到 GitHub Pages，可直接用手机浏览器打开预览。
+# （GitHub Pages 环境默认只允许默认分支部署，所以功能分支只做构建验证。）
+on:
+  push:
+    branches: [feat/lingling-ai-v0.1, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package.json
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
