@@ -7,6 +7,7 @@ import type { AIConfig } from '../db/schema'
 import { useAIConfigLoaded } from '../store/profile'
 import { DEFAULT_AI_CONFIG } from '../db/db'
 import { testConnection } from '../services/ai/openai'
+import { fetchQuota, getDeviceId, serviceAvailable, type QuotaInfo } from '../services/ai/service'
 import { Icon } from '../theme/icons'
 
 const PRESETS = [
@@ -23,6 +24,12 @@ export default function ApiSettingsPage() {
   const [maxTokens, setMaxTokens] = useState('1024')
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [quota, setQuota] = useState<QuotaInfo | null>(null)
+  const available = serviceAvailable()
+
+  useEffect(() => {
+    if (available) void fetchQuota().then(setQuota)
+  }, [available])
 
   useEffect(() => {
     if (loaded.current || cfg === undefined) return
@@ -61,7 +68,8 @@ export default function ApiSettingsPage() {
     setTesting(true)
     setResult(null)
     try {
-      setResult(await testConnection(normalized()))
+      const c = normalized()
+      setResult(await testConnection(c, fetch, c.service === 'lingling' ? await getDeviceId() : ''))
     } finally {
       setTesting(false)
     }
@@ -71,12 +79,72 @@ export default function ApiSettingsPage() {
 
   return (
     <div className="h-dvh flex flex-col">
-      <NavBar title="API 设置" back />
+      <NavBar title="AI 服务" back />
       <div className="flex-1 min-h-0 overflow-y-auto pb-12">
         {!cfg && <div className="py-16 text-center text-sm text-[var(--c-text-3)]">读取中…</div>}
         {cfg && (<>
-        {/* 模式选择 */}
-        <div className="mx-4 mt-3 p-1 rounded-full glass-1 grid grid-cols-2 text-[13px]">
+        {/* 服务选择：两种模式共用同一套角色、世界书与聊天记录，切换不会删除任何内容 */}
+        <div className="mx-4 mt-3 glass rounded-[var(--radius-card)] overflow-hidden">
+          {([
+            ['lingling', '聆聆默认服务', '推荐 · 无需 API Key，打开就能聊'],
+            ['custom', '使用自己的 API', '兼容 OpenAI 格式的服务商，需自备 Key'],
+          ] as const).map(([id, label, hint]) => (
+            <button
+              key={id}
+              onClick={() => set('service', id)}
+              className="press w-full flex items-center gap-3 px-4 py-3 hairline-b last:border-b-0 text-left"
+            >
+              <span
+                className={`h-[18px] w-[18px] shrink-0 rounded-full border flex items-center justify-center ${
+                  form.service === id ? 'border-[var(--c-accent)]' : 'border-[var(--c-text-3)]'
+                }`}
+              >
+                {form.service === id && <span className="h-2.5 w-2.5 rounded-full bg-[var(--c-accent)]" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px]">{label}</span>
+                <span className="block mt-0.5 text-[12px] text-[var(--c-text-3)]">{hint}</span>
+              </span>
+              {id === 'lingling' && (
+                <span
+                  className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full ${
+                    available ? 'bg-[#e8f3ee] text-[#4f7d68]' : 'bg-white/60 text-[var(--c-text-3)] border border-[var(--c-line)]'
+                  }`}
+                >
+                  {available ? '已开通' : '尚未开通'}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {form.service === 'lingling' ? (
+          <div className="mx-5 mt-4 space-y-3 text-[12.5px] leading-relaxed text-[var(--c-text-2)]">
+            {available ? (
+              <>
+                {quota && (
+                  <div className="glass-1 rounded-[var(--radius-sm)] px-4 py-3 flex items-baseline justify-between">
+                    <span>今日免费消息</span>
+                    <span className="serif-zh text-[17px] text-[var(--c-brand)]">
+                      {quota.remaining}
+                      <span className="text-[12px] text-[var(--c-text-3)]"> / {quota.limit}</span>
+                    </span>
+                  </div>
+                )}
+                <p>由聆聆的服务端调用默认模型，你不需要任何账号或密钥。每台设备每天有一定数量的免费消息，用完后第二天自动恢复。</p>
+              </>
+            ) : (
+              <p className="rounded-[var(--radius-sm)] bg-[var(--c-accent-soft)] px-4 py-3">
+                聆聆默认服务<b className="text-[var(--c-text)]">尚未开通</b>：服务端还没有部署，所以现在选择它不会产生任何回复。开通之前，请先选择「使用自己的 API」。
+              </p>
+            )}
+            <p className="text-[11.5px] text-[var(--c-text-3)]">
+              隐私：聊天时，角色设定、相关世界书和最近的聊天记录会经由聆聆服务发送给模型服务商以生成回复；聆聆服务不保存聊天内容，只按匿名设备 ID 统计每日用量。
+            </p>
+          </div>
+        ) : (<>
+        {/* 自己的 API：连接方式 */}
+        <div className="mx-4 mt-4 p-1 rounded-full glass-1 grid grid-cols-2 text-[13px]">
           {(['direct', 'proxy'] as const).map((m) => (
             <button
               key={m}
@@ -162,16 +230,22 @@ export default function ApiSettingsPage() {
           </Section>
         )}
 
+        <p className="mx-6 mt-3 text-[11px] leading-relaxed text-[var(--c-text-3)]">
+          支持兼容 OpenAI Chat Completions 格式的服务商，但不保证所有第三方模型都完全兼容（例如流式输出格式、参数名称可能不同）。聆聆不会在任何日志中记录你的 Key。
+        </p>
+
         <Section title="模型与生成参数">
           <TextField label="模型名称" value={form.model} onChange={(e) => set('model', e.target.value)} placeholder="deepseek-chat" autoCapitalize="off" autoCorrect="off" />
           <TextField label="temperature（0–2，越高越随性）" inputMode="decimal" value={temperature} onChange={(e) => setTemperature(e.target.value)} />
           <TextField label="单次回复最多 tokens" inputMode="numeric" value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
         </Section>
 
+        </>)}
+
         <div className="mx-4 mt-4">
           <button
             onClick={() => void test()}
-            disabled={testing}
+            disabled={testing || (form.service === 'lingling' && !available)}
             className="press w-full h-10 rounded-full glass-1 text-[14px] text-[var(--c-accent-strong)] disabled:opacity-50"
           >
             {testing ? '正在测试…' : '测试连接'}

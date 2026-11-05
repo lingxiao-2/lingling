@@ -82,3 +82,9 @@ scripts/       test-import.ts（npm test）
 ## 隐私与 API Key
 
 API Key 仅保存在当前浏览器的 IndexedDB，不进入代码或仓库。纯前端调用时浏览器会直接把密钥与聊天内容发给你配置的 API 服务；这不等同于可信后端对密钥的保护。
+
+## AI 服务（双模式）
+
+- **聆聆默认服务**：无需 API Key。前端与后端代码已完成，**后端尚未部署**；部署前，界面会显示「尚未开通」，不会生成任何回复。说明与部署步骤见 [`docs/default-service.md`](docs/default-service.md)。
+- **使用自己的 API**：兼容 OpenAI 格式，可以浏览器直连（个人测试），也可以通过自建代理使用。见 [`docs/ai-proxy.md`](docs/ai-proxy.md)。
+- 仓库与前端代码中不包含任何密钥。

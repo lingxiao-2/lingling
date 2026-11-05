@@ -32,6 +32,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+        env:
+          # 聆聆默认服务的公开地址（仓库 Settings → Variables → LINGLING_SERVICE_URL）。
+          # 只是地址，不是密钥；未设置时默认服务显示为「尚未开通」。
+          VITE_LINGLING_SERVICE_URL: ${{ vars.LINGLING_SERVICE_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
