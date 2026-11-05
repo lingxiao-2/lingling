@@ -1,0 +1,125 @@
+/**
+ * 导入解析层的数据类型。
+ * 这一层只做「文件 → 草稿」的纯函数转换，不访问 IndexedDB、不依赖 React，
+ * 便于单独测试。真正写入数据库在 db/repo.ts 的 saveImport()。
+ */
+
+export type Extensions = Record<string, unknown>
+
+/** 角色草稿：导入预览阶段可编辑，确认后才保存 */
+export interface CharacterDraft {
+  name: string
+  bio: string
+  personality: string
+  speakingStyle: string
+  backstory: string
+  relationToUser: string
+  /** 开场白：只作为角色设定保存，不写入聊天记录 */
+  greeting: string
+  /** 示例对话：只作为角色设定保存，不写入聊天记录 */
+  exampleDialogue: string
+  /** 无法映射到上述字段的原始数据，原样保留 */
+  extensions: Extensions
+}
+
+export interface LoreEntryDraft {
+  name: string
+  keys: string[]
+  secondaryKeys: string[]
+  content: string
+  enabled: boolean
+  constant: boolean
+  extensions: Extensions
+}
+
+export interface LorebookDraft {
+  name: string
+  description: string
+  entries: LoreEntryDraft[]
+  extensions: Extensions
+}
+
+/** 角色字段键（TXT / Markdown 段落归属用） */
+export type CharacterFieldKey =
+  | 'name'
+  | 'bio'
+  | 'personality'
+  | 'speakingStyle'
+  | 'backstory'
+  | 'relationToUser'
+  | 'greeting'
+  | 'exampleDialogue'
+
+export type SectionTarget = CharacterFieldKey | 'ignore'
+
+/** TXT / Markdown 文件拆出的段落，用户在预览里决定它属于哪个字段 */
+export interface TextSection {
+  label: string
+  text: string
+  target: SectionTarget
+}
+
+export type ImportFormat =
+  | 'st-card-v2'
+  | 'st-card-v1'
+  | 'st-worldinfo'
+  | 'st-character-book'
+  | 'combo-json'
+  | 'generic-json'
+  | 'text'
+  | 'markdown'
+
+export interface ParsedFile {
+  fileName: string
+  format: ImportFormat
+  characters: CharacterDraft[]
+  lorebooks: LorebookDraft[]
+  /** 同一文件内角色与世界书的关联（下标），保存时转换为稳定 ID */
+  links: { character: number; lorebook: number }[]
+  warnings: string[]
+  /** 仅 TXT / Markdown 角色：可重新分配的段落；characters[0] 由它生成 */
+  sections?: TextSection[]
+}
+
+export type ParseOutcome =
+  | { ok: true; file: ParsedFile }
+  | { ok: false; fileName: string; error: string }
+
+/** 导入模式：决定 TXT / Markdown 被当作角色还是世界书 */
+export type ImportKind = 'character' | 'lorebook'
+
+export const FIELD_LABELS: Record<CharacterFieldKey, string> = {
+  name: '角色名称',
+  bio: '角色简介',
+  personality: '性格设定',
+  speakingStyle: '说话风格',
+  backstory: '背景故事',
+  relationToUser: '与你的关系',
+  greeting: '开场白',
+  exampleDialogue: '示例对话',
+}
+
+export const FORMAT_LABELS: Record<ImportFormat, string> = {
+  'st-card-v2': 'SillyTavern 角色卡 V2',
+  'st-card-v1': 'SillyTavern 角色卡 V1',
+  'st-worldinfo': 'SillyTavern 世界书',
+  'st-character-book': 'SillyTavern 角色内置世界书',
+  'combo-json': '组合 JSON（角色 + 世界书）',
+  'generic-json': '通用 JSON',
+  text: '纯文本 TXT',
+  markdown: 'Markdown',
+}
+
+export function emptyCharacterDraft(): CharacterDraft {
+  return {
+    name: '',
+    bio: '',
+    personality: '',
+    speakingStyle: '',
+    backstory: '',
+    relationToUser: '',
+    greeting: '',
+    exampleDialogue: '',
+    extensions: {},
+  }
+}
