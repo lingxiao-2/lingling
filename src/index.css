@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+/* ===== Winter Letter · 冬日来信 设计变量 ===== */
+:root {
+  --c-bg: #eaf1f8;
+  --c-bg-2: #f6f9fc;
+  --c-surface: rgba(255, 255, 255, 0.72);
+  --c-surface-solid: #ffffff;
+  --c-line: rgba(120, 150, 185, 0.18);
+  --c-text: #26364a;
+  --c-text-2: #6a7d93;
+  --c-text-3: #9aabbd;
+  --c-accent: #6f9cc9;
+  --c-accent-strong: #4f7fae;
+  --c-accent-soft: #dce9f5;
+  --c-bubble-me: #cfe1f2;
+  --c-bubble-them: #ffffff;
+  --c-danger: #c8605f;
+  --radius-card: 18px;
+  --font-serif-en: "Cormorant Garamond", "Playfair Display", Georgia, "Times New Roman", serif;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--c-text);
+  background: linear-gradient(180deg, #e3edf7 0%, #f3f7fb 55%, #eef3f9 100%);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+.glass {
+  background: var(--c-surface);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+
+.card {
+  background: var(--c-surface-solid);
+  border-radius: var(--radius-card);
+  box-shadow: 0 1px 2px rgba(60, 90, 130, 0.06), 0 6px 18px rgba(90, 130, 175, 0.08);
+}
+
+.hairline-b {
+  border-bottom: 1px solid var(--c-line);
+}
+.hairline-t {
+  border-top: 1px solid var(--c-line);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.press:active {
+  opacity: 0.6;
+}
+
+.title-en {
+  font-family: var(--font-serif-en);
+  letter-spacing: 0.04em;
+}
