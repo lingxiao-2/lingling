@@ -188,8 +188,15 @@ test('未配置任何服务：默认服务未开通时给出提示，不发请�
 test('配置迁移：旧版已填写 API Key / 代理的用户自动视为「自己的 API」，聊天不中断', () => {
   assert.equal(normalizeAIConfig({ apiKey: 'sk-old', baseUrl: 'https://a/v1', model: 'm' }).service, 'custom')
   assert.equal(normalizeAIConfig({ mode: 'proxy', proxyUrl: 'https://p' }).service, 'custom')
-  assert.equal(normalizeAIConfig(undefined).service, 'lingling')
-  assert.equal(normalizeAIConfig({ apiKey: 'sk', service: 'lingling' }).service, 'lingling')
+  // 新用户：默认服务已开通才默认使用它；未开通时引导使用自己的 API
+  assert.equal(normalizeAIConfig(undefined, 'https://svc.example.com').service, 'lingling')
+  assert.equal(normalizeAIConfig(undefined, '').service, 'custom')
+  assert.equal(normalizeAIConfig({}, '').service, 'custom')
+  // 已经保存过的选择永远不变
+  assert.equal(normalizeAIConfig({ apiKey: 'sk', service: 'lingling' }, '').service, 'lingling')
+  assert.equal(normalizeAIConfig({ service: 'custom' }, 'https://svc.example.com').service, 'custom')
+  // 已保存的模型名不会被新默认值覆盖
+  assert.equal(normalizeAIConfig({ apiKey: 'sk', model: 'deepseek-chat' }).model, 'deepseek-chat')
 })
 
 test('默认服务：携带匿名设备 ID、不带密钥；回复走同一套上下文与消息处理', async () => {

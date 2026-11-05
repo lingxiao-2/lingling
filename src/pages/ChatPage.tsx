@@ -368,8 +368,12 @@ export default function ChatPage() {
               <span className="script-en text-[15.5px] whitespace-nowrap">A letter from winter ♡</span>
             </div>
             {notConfigured && (
-              <button onClick={() => nav('/me/api')} className="press ice date-tag text-[11px] text-[var(--c-accent-strong)]" style={{ fontFamily: 'inherit' }}>
-                {ai.service === 'lingling' ? '聆聆默认服务尚未开通 · 改用自己的 API' : '尚未配置 AI 服务 · 去设置'}
+              <button
+                onClick={() => nav(`/setup?from=${encodeURIComponent(`/chat/${convId}`)}`)}
+                className="press ice date-tag text-[11px] text-[var(--c-accent-strong)]"
+                style={{ fontFamily: 'inherit' }}
+              >
+                还差一步：连接 AI 后，{title || '角色'}就能回复你 →
               </button>
             )}
           </div>
@@ -456,7 +460,14 @@ export default function ChatPage() {
                 </button>
                 {(reply.errorKind === 'config' || reply.errorKind === 'auth' || reply.errorKind === 'model' || reply.errorKind === 'network' ||
                   (ai.service === 'lingling' && (reply.errorKind === 'quota' || reply.errorKind === 'unavailable'))) && (
-                  <button onClick={() => nav('/me/api')} className="press ice-hi h-8 px-3 rounded-full text-[12px] text-[#5a6a86]">
+                  <button
+                    onClick={() =>
+                      reply.errorKind === 'config' || (ai.service === 'lingling' && (reply.errorKind === 'quota' || reply.errorKind === 'unavailable'))
+                        ? nav(`/setup?from=${encodeURIComponent(`/chat/${convId}`)}`)
+                        : nav('/me/api')
+                    }
+                    className="press ice-hi h-8 px-3 rounded-full text-[12px] text-[#5a6a86]"
+                  >
                     {ai.service === 'lingling' && (reply.errorKind === 'quota' || reply.errorKind === 'unavailable') ? '使用自己的 API' : '检查设置'}
                   </button>
                 )}

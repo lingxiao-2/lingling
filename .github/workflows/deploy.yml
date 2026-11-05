@@ -36,6 +36,8 @@ jobs:
           # 聆聆默认服务的公开地址（仓库 Settings → Variables → LINGLING_SERVICE_URL）。
           # 只是地址，不是密钥；未设置时默认服务显示为「尚未开通」。
           VITE_LINGLING_SERVICE_URL: ${{ vars.LINGLING_SERVICE_URL }}
+          # 可选：反馈问卷的公开链接（例如自己创建的腾讯问卷），不是密钥
+          VITE_FEEDBACK_FORM_URL: ${{ vars.FEEDBACK_FORM_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

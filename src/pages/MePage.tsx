@@ -115,15 +115,20 @@ export default function MePage() {
             value={
               ai.service === 'lingling'
                 ? configProblem(ai)
-                  ? '默认服务 · 未开通'
-                  : '聆聆默认服务'
+                  ? '聆聆 AI · 未开放'
+                  : '聆聆 AI'
                 : configProblem(ai)
-                  ? '自己的 API · 未配置'
+                  ? '未连接'
                   : `自己的 API · ${ai.model}`
             }
-            onClick={() => nav('/me/api')}
+            onClick={() => nav(configProblem(ai) ? '/setup' : '/me/api')}
             right={<Icon name="forward" size="sm" />}
           />
+        </Group>
+
+        <Group en="Membership">
+          <Row icon="plan" label="会员计划" value="尚未开售" onClick={() => nav('/me/plan')} right={<Icon name="forward" size="sm" />} />
+          <Row icon="feedback" label="意向登记与反馈" onClick={() => nav('/me/feedback')} right={<Icon name="forward" size="sm" />} />
         </Group>
 
         <Group en="Data">

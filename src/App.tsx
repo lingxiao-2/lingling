@@ -18,6 +18,9 @@ import LorebookDetailPage from './pages/LorebookDetailPage'
 import LorebookEditPage from './pages/LorebookEditPage'
 import WorldDetailPage from './pages/WorldDetailPage'
 import WorldEditPage from './pages/WorldEditPage'
+import SetupPage from './pages/SetupPage'
+import PlanPage from './pages/PlanPage'
+import FeedbackPage from './pages/FeedbackPage'
 
 function TabLayout() {
   return (
@@ -54,6 +57,9 @@ export default function App() {
       <Route path="me/api" element={<ApiSettingsPage />} />
       <Route path="me/profile" element={<ProfileEditPage />} />
       <Route path="me/theme" element={<ThemeSettingsPage />} />
+      <Route path="me/plan" element={<PlanPage />} />
+      <Route path="me/feedback" element={<FeedbackPage />} />
+      <Route path="setup" element={<SetupPage />} />
       <Route path="import" element={<ImportPage />} />
       {/* 旧入口，保留以免已有链接失效 */}
       <Route path="lorebooks" element={<Navigate to="/contacts?tab=lorebooks" replace />} />

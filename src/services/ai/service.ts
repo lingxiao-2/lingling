@@ -23,12 +23,15 @@ export async function getDeviceId(): Promise<string> {
 /**
  * 读取已保存的 AI 配置并补全默认值。
  * 迁移：旧版本没有 service 字段——已经填写过 API Key 或代理地址的，视为「使用自己的 API」，
- * 保证升级后原有的聊天方式不受影响；其余默认使用聆聆默认服务。
+ * 保证升级后原有的聊天方式不受影响。
+ * 还没选择过服务的新用户：默认服务已开通时使用默认服务，否则引导使用自己的 API
+ * （默认服务未开通时选中它只会得到「尚未开通」，首次使用体验很差）。
+ * 已经保存过的选择永远不会被改动。
  */
-export function normalizeAIConfig(saved: Partial<AIConfig> | undefined): AIConfig {
+export function normalizeAIConfig(saved: Partial<AIConfig> | undefined, serviceUrl = getServiceUrl()): AIConfig {
   const cfg: AIConfig = { ...DEFAULT_AI_CONFIG, ...(saved ?? {}) }
   if (!saved?.service) {
-    cfg.service = saved && (saved.apiKey?.trim() || saved.proxyUrl?.trim()) ? 'custom' : 'lingling'
+    cfg.service = saved && (saved.apiKey?.trim() || saved.proxyUrl?.trim()) ? 'custom' : serviceAvailable(serviceUrl) ? 'lingling' : 'custom'
   }
   return cfg
 }

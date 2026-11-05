@@ -9,11 +9,9 @@ import { DEFAULT_AI_CONFIG } from '../db/db'
 import { testConnection } from '../services/ai/openai'
 import { fetchQuota, getDeviceId, serviceAvailable, type QuotaInfo } from '../services/ai/service'
 import { Icon } from '../theme/icons'
+import { modelRenameHint, PROVIDERS } from '../services/ai/providers'
 
-const PRESETS = [
-  { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-]
+const PRESETS = PROVIDERS.filter((p) => p.id !== 'other').slice(0, 3)
 
 export default function ApiSettingsPage() {
   const nav = useNavigate()
@@ -86,8 +84,8 @@ export default function ApiSettingsPage() {
         {/* 服务选择：两种模式共用同一套角色、世界书与聊天记录，切换不会删除任何内容 */}
         <div className="mx-4 mt-3 glass rounded-[var(--radius-card)] overflow-hidden">
           {([
-            ['lingling', '聆聆默认服务', '推荐 · 无需 API Key，打开就能聊'],
-            ['custom', '使用自己的 API', '兼容 OpenAI 格式的服务商，需自备 Key'],
+            ['lingling', '聆聆 AI', '未来的会员服务 · 无需 API Key'],
+            ['custom', '使用自己的 API', '免费 · 兼容 OpenAI 格式的服务商，需自备 Key'],
           ] as const).map(([id, label, hint]) => (
             <button
               key={id}
@@ -111,7 +109,7 @@ export default function ApiSettingsPage() {
                     available ? 'bg-[#e8f3ee] text-[#4f7d68]' : 'bg-white/60 text-[var(--c-text-3)] border border-[var(--c-line)]'
                   }`}
                 >
-                  {available ? '已开通' : '尚未开通'}
+                  {available ? '已开通' : '尚未开放'}
                 </span>
               )}
             </button>
@@ -135,7 +133,7 @@ export default function ApiSettingsPage() {
               </>
             ) : (
               <p className="rounded-[var(--radius-sm)] bg-[var(--c-accent-soft)] px-4 py-3">
-                聆聆默认服务<b className="text-[var(--c-text)]">尚未开通</b>：服务端还没有部署，所以现在选择它不会产生任何回复。开通之前，请先选择「使用自己的 API」。
+                聆聆 AI <b className="text-[var(--c-text)]">尚未开放</b>：它计划作为未来会员的权益，现在服务端没有部署，选择它不会产生任何回复。请先选择「使用自己的 API」。
               </p>
             )}
             <p className="text-[11.5px] text-[var(--c-text-3)]">
@@ -143,6 +141,11 @@ export default function ApiSettingsPage() {
             </p>
           </div>
         ) : (<>
+        <button onClick={() => nav('/setup')} className="press mx-4 mt-4 w-[calc(100%-2rem)] flex items-center gap-2 rounded-full glass-1 px-4 h-10 text-[13px] text-[var(--c-accent-strong)]">
+          <Icon name="key" size="sm" />
+          <span className="flex-1 text-left">第一次使用？跟着「连接 AI」向导一步步来</span>
+          <Icon name="forward" size="sm" />
+        </button>
         {/* 自己的 API：连接方式 */}
         <div className="mx-4 mt-4 p-1 rounded-full glass-1 grid grid-cols-2 text-[13px]">
           {(['direct', 'proxy'] as const).map((m) => (
@@ -198,13 +201,13 @@ export default function ApiSettingsPage() {
             <div className="flex gap-2 px-4 pt-3">
               {PRESETS.map((p) => (
                 <GhostButton
-                  key={p.label}
+                  key={p.id}
                   onClick={() => {
                     set('baseUrl', p.baseUrl)
-                    set('model', p.model)
+                    if (p.model) set('model', p.model)
                   }}
                 >
-                  {p.label}
+                  {p.name.split(/[ （]/)[0]}
                 </GhostButton>
               ))}
             </div>
@@ -212,7 +215,7 @@ export default function ApiSettingsPage() {
               label="API Base URL"
               value={form.baseUrl}
               onChange={(e) => set('baseUrl', e.target.value)}
-              placeholder="https://api.deepseek.com/v1"
+              placeholder="https://api.deepseek.com"
               autoCapitalize="off"
               autoCorrect="off"
               inputMode="url"
@@ -235,7 +238,7 @@ export default function ApiSettingsPage() {
         </p>
 
         <Section title="模型与生成参数">
-          <TextField label="模型名称" value={form.model} onChange={(e) => set('model', e.target.value)} placeholder="deepseek-chat" autoCapitalize="off" autoCorrect="off" />
+          <TextField label="模型名称" value={form.model} onChange={(e) => set('model', e.target.value)} placeholder="deepseek-flash" autoCapitalize="off" autoCorrect="off" hint={modelRenameHint(form.baseUrl, form.model) ?? undefined} />
           <TextField label="temperature（0–2，越高越随性）" inputMode="decimal" value={temperature} onChange={(e) => setTemperature(e.target.value)} />
           <TextField label="单次回复最多 tokens" inputMode="numeric" value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} />
         </Section>

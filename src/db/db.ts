@@ -8,11 +8,11 @@ export const DEFAULT_PROFILE: UserProfile = { nickname: '我', signature: '' }
 export const DEFAULT_AI_CONFIG: AIConfig = {
   service: 'lingling',
   mode: 'direct',
-  baseUrl: 'https://api.deepseek.com/v1',
+  baseUrl: 'https://api.deepseek.com',
   apiKey: '',
   proxyUrl: '',
   proxyToken: '',
-  model: 'deepseek-chat',
+  model: 'deepseek-flash',
   temperature: 0.8,
   maxTokens: 1024,
 }

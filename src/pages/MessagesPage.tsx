@@ -12,6 +12,8 @@ import { ActionSheet, ConfirmDialog } from '../components/Sheet'
 import { Empty, SearchBox } from '../components/ui'
 import { formatListTime } from '../lib/util'
 import { useLongPress } from '../lib/usePress'
+import { configProblem } from '../services/ai/openai'
+import { useAIConfigLoaded } from '../store/profile'
 
 function ConvRow({
   conv,
@@ -76,6 +78,9 @@ export default function MessagesPage() {
 
   const convs = useLiveQuery(() => db.conversations.toArray(), [], [] as Conversation[])
   const chars = useLiveQuery(() => db.characters.toArray(), [], [] as Character[])
+  // 读取完成前不显示，避免已配置的用户看到一闪而过的提示
+  const ai = useAIConfigLoaded()
+  const needsSetup = ai !== undefined && configProblem(ai) !== null
   const charMap = useMemo(() => new Map(chars.map((c) => [c.id, c])), [chars])
 
   const list = useMemo(() => {
@@ -94,6 +99,18 @@ export default function MessagesPage() {
       <NavBar title={<Brand />} />
       <div className="flex-1 min-h-0 overflow-y-auto">
         <SearchBox value={q} onChange={setQ} placeholder="搜索会话" />
+        {needsSetup && (
+          <button
+            onClick={() => nav('/setup')}
+            className="press mx-3 mb-1.5 w-[calc(100%-1.5rem)] flex items-center gap-2.5 rounded-full glass-1 h-10 px-4 text-left"
+          >
+            <Icon name="key" size="sm" className="shrink-0 text-[var(--c-accent-strong)]" />
+            <span className="flex-1 min-w-0 truncate text-[13px] text-[var(--c-text-2)]">
+              还差一步：<span className="text-[var(--c-accent-strong)]">连接 AI</span>，角色就能回复你
+            </span>
+            <Icon name="forward" size="sm" className="shrink-0 text-[var(--c-text-3)]" />
+          </button>
+        )}
         {list.length === 0 ? (
           q ? (
             <Empty title="没有找到相关会话" />
