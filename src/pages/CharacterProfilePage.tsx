@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Pencil } from 'lucide-react'
 import NavBar, { NavButton } from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import { ConfirmDialog } from '../components/Sheet'
@@ -66,14 +65,12 @@ export default function CharacterProfilePage() {
         title="角色资料"
         back
         right={
-          <NavButton label="编辑" onClick={() => nav(`/character/${id}/edit`)}>
-            <Pencil size={20} strokeWidth={1.5} />
-          </NavButton>
+          <NavButton label="编辑" icon="edit" onClick={() => nav(`/character/${id}/edit`)} />
         }
       />
       <div className="flex-1 min-h-0 overflow-y-auto pb-10">
         <div className="flex flex-col items-center pt-6 pb-2 gap-2">
-          <Avatar name={c.name} src={c.avatar} size={88} rounded={24} />
+          <Avatar name={c.name} src={c.avatar} size="profile" />
           <div className="text-xl font-medium">{c.name}</div>
           {c.bio && <div className="px-10 text-center text-sm text-[var(--c-text-2)]">{c.bio}</div>}
           <button

@@ -108,7 +108,7 @@ export default function CharacterEditPage() {
       <div className="flex-1 min-h-0 overflow-y-auto pb-10">
         <div className="flex justify-center pt-6">
           <button onClick={() => fileRef.current?.click()} className="press flex flex-col items-center gap-2">
-            <Avatar name={form.name || '?'} src={form.avatar} size={84} rounded={22} />
+            <Avatar name={form.name || '?'} src={form.avatar} size="profile" />
             <span className="text-xs text-[var(--c-accent-strong)]">{form.avatar ? '更换头像' : '上传头像'}</span>
           </button>
           <input

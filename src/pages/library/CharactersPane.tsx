@@ -39,7 +39,7 @@ export default function CharactersPane() {
               onClick={() => nav(`/character/${c.id}`)}
               className="press w-full flex items-center gap-3.5 px-4 py-3 hairline-b text-left"
             >
-              <Avatar name={c.name} src={c.avatar} size={46} />
+              <Avatar name={c.name} src={c.avatar} size="list" />
               <div className="min-w-0 flex-1">
                 <div className="text-[16px] truncate">{c.name}</div>
                 <div className="text-[13px] text-[var(--c-text-3)] truncate">{c.bio || '暂无简介'}</div>

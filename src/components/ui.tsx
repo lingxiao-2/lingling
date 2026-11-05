@@ -1,5 +1,5 @@
 import type { ReactNode, InputHTMLAttributes, TextareaHTMLAttributes } from 'react'
-import { Search } from 'lucide-react'
+import { Icon } from '../theme/icons'
 
 export function SearchBox({
   value,
@@ -12,13 +12,13 @@ export function SearchBox({
 }) {
   return (
     <div className="px-3 py-2">
-      <div className="h-9 rounded-xl bg-white/80 flex items-center gap-2 px-3 text-[var(--c-text-3)]">
-        <Search size={16} strokeWidth={1.6} />
+      <div className="glass-1 h-9 rounded-full flex items-center gap-2 px-3.5 text-[var(--c-text-3)]">
+        <Icon name="search" size="sm" />
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="flex-1 min-w-0 bg-transparent outline-none text-[15px] text-[var(--c-text)] placeholder:text-[var(--c-text-3)]"
+          className="flex-1 min-w-0 bg-transparent outline-none text-[14px] text-[var(--c-text)] placeholder:text-[var(--c-text-3)]"
         />
       </div>
     </div>
@@ -28,8 +28,8 @@ export function SearchBox({
 export function Empty({ title, hint, action }: { title: string; hint?: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center text-center px-10 py-16 gap-2">
-      <div className="title-en text-3xl text-[var(--c-accent)] opacity-70">Lingling</div>
-      <div className="text-[15px] text-[var(--c-text-2)]">{title}</div>
+      <div className="script-en text-[30px] text-[var(--c-brand-soft)]">Lingling</div>
+      <div className="serif-zh text-[16px] tracking-[0.1em] text-[var(--c-brand)]">{title}</div>
       {hint && <div className="text-xs text-[var(--c-text-3)] leading-relaxed">{hint}</div>}
       {action && <div className="mt-3">{action}</div>}
     </div>
@@ -52,7 +52,7 @@ export function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="press h-11 px-6 rounded-full bg-[var(--c-accent)] text-white text-[15px] disabled:opacity-40"
+      className="press h-10 min-w-[120px] px-6 rounded-full bg-[var(--c-accent)] text-white text-[14px] tracking-[0.08em] shadow-[0_4px_14px_rgba(95,128,170,0.28)] disabled:opacity-40 disabled:shadow-none"
     >
       {children}
     </button>
@@ -62,7 +62,7 @@ export function PrimaryButton({
 export function Section({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <section className="mx-3 mt-4">
-      {title && <div className="px-2 pb-1.5 text-xs text-[var(--c-text-3)]">{title}</div>}
+      {title && <div className="px-3 pb-1.5 text-[12px] tracking-wider text-[var(--c-text-2)]">{title}</div>}
       <div className="card overflow-hidden">{children}</div>
     </section>
   )
@@ -97,7 +97,7 @@ export function Row({
 }
 
 const fieldBase =
-  'w-full rounded-xl bg-[var(--c-bg-2)] px-3 py-2.5 text-[15px] outline-none border border-transparent focus:border-[var(--c-accent)] placeholder:text-[var(--c-text-3)]'
+  'w-full rounded-[var(--radius-sm)] bg-[var(--c-bg-2)] px-3 py-2.5 text-[15px] outline-none border border-[var(--c-line)] focus:border-[var(--c-accent)] placeholder:text-[var(--c-text-3)]'
 
 export function TextField({
   label,
@@ -106,7 +106,7 @@ export function TextField({
 }: { label: string; hint?: string } & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <label className="block px-4 py-3">
-      <div className="text-xs text-[var(--c-text-2)] mb-1.5">{label}</div>
+      <div className="text-[12px] tracking-wide text-[var(--c-text-2)] mb-1.5">{label}</div>
       <input {...props} className={fieldBase} />
       {hint && <div className="text-[11px] text-[var(--c-text-3)] mt-1.5 leading-relaxed">{hint}</div>}
     </label>
@@ -121,7 +121,7 @@ export function AreaField({
 }: { label: string; hint?: string; rows?: number } & TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <label className="block px-4 py-3">
-      <div className="text-xs text-[var(--c-text-2)] mb-1.5">{label}</div>
+      <div className="text-[12px] tracking-wide text-[var(--c-text-2)] mb-1.5">{label}</div>
       <textarea rows={rows} {...props} className={`${fieldBase} resize-none leading-relaxed`} />
       {hint && <div className="text-[11px] text-[var(--c-text-3)] mt-1.5 leading-relaxed">{hint}</div>}
     </label>
@@ -137,5 +137,44 @@ export function QuietEmpty({ eyebrow, title, hint }: { eyebrow: string; title: s
       <div className="mt-4 h-px w-8 bg-[var(--c-brand-soft)]/60" />
       {hint && <div className="mt-4 text-xs leading-relaxed text-[var(--c-text-3)]">{hint}</div>}
     </div>
+  )
+}
+
+/** 分组标题：英文小字 + 中文衬线，可带右侧文字操作 */
+export function SectionTitle({
+  en,
+  zh,
+  action,
+}: {
+  en: string
+  zh: string
+  action?: { label: string; onClick: () => void }
+}) {
+  return (
+    <div className="flex items-end justify-between px-5 pt-7 pb-2.5">
+      <div>
+        <div className="eyebrow">{en}</div>
+        <div className="section-zh mt-1">{zh}</div>
+      </div>
+      {action && (
+        <button onClick={action.onClick} className="press text-[13px] text-[var(--c-accent-strong)] px-1 pb-0.5">
+          {action.label}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** 次要按钮：发丝描边胶囊 */
+export function GhostButton({ children, onClick, danger }: { children: ReactNode; onClick?: () => void; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`press h-7 px-3 rounded-full border border-[var(--c-line)] bg-white/40 text-[12px] ${
+        danger ? 'text-[var(--c-danger)]' : 'text-[var(--c-text-2)]'
+      }`}
+    >
+      {children}
+    </button>
   )
 }

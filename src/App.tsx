@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import TabBar from './components/TabBar'
+import Wallpaper from './components/Wallpaper'
 import { ensureDefaults } from './db/db'
 import MessagesPage from './pages/MessagesPage'
 import ContactsPage from './pages/ContactsPage'
@@ -11,6 +12,7 @@ import CharacterEditPage from './pages/CharacterEditPage'
 import CharacterProfilePage from './pages/CharacterProfilePage'
 import ApiSettingsPage from './pages/ApiSettingsPage'
 import ProfileEditPage from './pages/ProfileEditPage'
+import ThemeSettingsPage from './pages/ThemeSettingsPage'
 import ImportPage from './pages/ImportPage'
 import LorebookDetailPage from './pages/LorebookDetailPage'
 import LorebookEditPage from './pages/LorebookEditPage'
@@ -36,6 +38,8 @@ export default function App() {
   }, [])
 
   return (
+    <>
+    <Wallpaper />
     <Routes>
       <Route element={<TabLayout />}>
         <Route index element={<MessagesPage />} />
@@ -49,6 +53,7 @@ export default function App() {
       <Route path="character/:id/edit" element={<CharacterEditPage />} />
       <Route path="me/api" element={<ApiSettingsPage />} />
       <Route path="me/profile" element={<ProfileEditPage />} />
+      <Route path="me/theme" element={<ThemeSettingsPage />} />
       <Route path="import" element={<ImportPage />} />
       {/* 旧入口，保留以免已有链接失效 */}
       <Route path="lorebooks" element={<Navigate to="/contacts?tab=lorebooks" replace />} />
@@ -60,5 +65,6 @@ export default function App() {
       <Route path="world/:id/edit" element={<WorldEditPage />} />
       <Route path="*" element={<MessagesPage />} />
     </Routes>
+    </>
   )
 }

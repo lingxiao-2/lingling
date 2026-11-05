@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { BookOpen, FileDown, Pencil, UserRound, Users } from 'lucide-react'
+import { Icon } from '../theme/icons'
 import NavBar, { NavButton } from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import WorldCover from '../components/WorldCover'
@@ -69,9 +69,7 @@ export default function WorldDetailPage() {
         title={world.name}
         back
         right={
-          <NavButton label="编辑世界" onClick={() => nav(`/world/${id}/edit`)}>
-            <Pencil size={19} strokeWidth={1.4} />
-          </NavButton>
+          <NavButton label="编辑世界" icon="edit" onClick={() => nav(`/world/${id}/edit`)} />
         }
       />
       <div className="flex-1 min-h-0 overflow-y-auto pb-12">
@@ -120,7 +118,7 @@ export default function WorldDetailPage() {
             {residents.map((c) => (
               <div key={c.id} className="flex items-center gap-3 px-4 py-2.5 hairline-b last:border-b-0">
                 <button onClick={() => nav(`/character/${c.id}`)} className="press flex flex-1 min-w-0 items-center gap-3 text-left">
-                  <Avatar name={c.name} src={c.avatar} size={38} rounded={11} />
+                  <Avatar name={c.name} src={c.avatar} size="list" />
                   <span className="min-w-0">
                     <span className="block text-[15px] truncate">{c.name}</span>
                     {c.bio && <span className="block text-xs text-[var(--c-text-3)] truncate">{c.bio}</span>}
@@ -175,12 +173,12 @@ export default function WorldDetailPage() {
           subtitle={`角色将归属于「${world.name}」`}
           onClose={() => setMenu(null)}
           actions={[
-            { label: '选择已有角色', hint: '从联系人中挑选', icon: <Users size={19} strokeWidth={1.4} />, onClick: () => setPicker('residents') },
-            { label: '新建', hint: '在这个世界里创造一个角色', icon: <UserRound size={19} strokeWidth={1.4} />, onClick: () => nav(`/character/new?world=${id}`) },
+            { label: '选择已有角色', hint: '从联系人中挑选', icon: <Icon name="people" />, onClick: () => setPicker('residents') },
+            { label: '新建', hint: '在这个世界里创造一个角色', icon: <Icon name="character" />, onClick: () => nav(`/character/new?world=${id}`) },
             {
               label: '从本地文件导入',
               hint: 'SillyTavern 角色卡、JSON、TXT、Markdown',
-              icon: <FileDown size={19} strokeWidth={1.4} />,
+              icon: <Icon name="import" />,
               onClick: () => nav(`/import?kind=character&world=${id}`),
             },
           ]}
@@ -192,11 +190,11 @@ export default function WorldDetailPage() {
           subtitle={`世界书将与「${world.name}」关联`}
           onClose={() => setMenu(null)}
           actions={[
-            { label: '选择已有世界书', hint: '世界书可同时关联多个世界', icon: <BookOpen size={19} strokeWidth={1.4} />, onClick: () => setPicker('books') },
+            { label: '选择已有世界书', hint: '世界书可同时关联多个世界', icon: <Icon name="lorebook" />, onClick: () => setPicker('books') },
             {
               label: '从本地文件导入',
               hint: 'SillyTavern 世界书、JSON、Markdown、TXT',
-              icon: <FileDown size={19} strokeWidth={1.4} />,
+              icon: <Icon name="import" />,
               onClick: () => nav(`/import?kind=lorebook&world=${id}`),
             },
           ]}
