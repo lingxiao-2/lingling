@@ -6,6 +6,7 @@ import { db } from '../db/db'
 import { deleteConversation, setPinned } from '../db/repo'
 import type { Character, Conversation } from '../db/schema'
 import NavBar from '../components/NavBar'
+import Brand from '../components/Brand'
 import Avatar from '../components/Avatar'
 import { ActionSheet, ConfirmDialog } from '../components/Sheet'
 import { Empty, SearchBox } from '../components/ui'
@@ -90,7 +91,7 @@ export default function MessagesPage() {
 
   return (
     <>
-      <NavBar title={<span className="title-en text-xl">Lingling</span>} />
+      <NavBar title={<Brand />} />
       <div className="flex-1 min-h-0 overflow-y-auto">
         <SearchBox value={q} onChange={setQ} placeholder="搜索会话" />
         {list.length === 0 ? (

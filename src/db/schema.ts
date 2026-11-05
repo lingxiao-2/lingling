@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 1
+export const DB_SCHEMA_VERSION = 2
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -27,8 +27,22 @@ export interface Character {
   /** 指定模型配置；为空则使用默认模型 */
   modelProfileId?: string
   permissions: CharacterPermissions
+  /** 开场白（V2 起）。只是角色设定，不写入聊天记录 */
+  greeting?: string
+  /** 示例对话（V2 起）。只是角色设定，不写入聊天记录，也不进入记忆 */
+  exampleDialogue?: string
+  /** 导入时无法映射的原始字段，原样保留（V2 起） */
+  extensions?: Record<string, unknown>
+  /** 导入来源（V2 起） */
+  importSource?: ImportSource
   createdAt: number
   updatedAt: number
+}
+
+export interface ImportSource {
+  fileName: string
+  format: string
+  importedAt: number
 }
 
 /* ---------- 会话与消息 ---------- */
@@ -123,6 +137,38 @@ export interface World {
   createdAt: number
 }
 
+/* ---------- 世界书（V2 起） ---------- */
+export interface LoreEntry {
+  id: string
+  name: string
+  keys: string[]
+  secondaryKeys: string[]
+  content: string
+  enabled: boolean
+  constant: boolean
+  extensions: Record<string, unknown>
+}
+
+/** 世界书与角色人设、聊天记忆分开存放 */
+export interface Lorebook {
+  id: string
+  name: string
+  description: string
+  entries: LoreEntry[]
+  extensions: Record<string, unknown>
+  importSource?: ImportSource
+  createdAt: number
+  updatedAt: number
+}
+
+/** 角色 ↔ 世界书 多对多关联，只用稳定 ID，不依赖名称 */
+export interface CharacterLorebookLink {
+  id: string
+  characterId: string
+  lorebookId: string
+  createdAt: number
+}
+
 /* ---------- 设置（键值） ---------- */
 export interface SettingRow {
   key: string
@@ -154,6 +200,8 @@ export class LinglingDB extends Dexie {
   stickers!: Table<Sticker, string>
   worlds!: Table<World, string>
   settings!: Table<SettingRow, string>
+  lorebooks!: Table<Lorebook, string>
+  characterLorebooks!: Table<CharacterLorebookLink, string>
 
   constructor() {
     super('lingling-ai')
@@ -167,6 +215,12 @@ export class LinglingDB extends Dexie {
       stickers: 'id, packId',
       worlds: 'id',
       settings: 'key',
+    })
+    // v2：新增世界书与关联表。旧表结构不变，角色的新增字段均为可选，
+    // 因此不需要 upgrade() 改写旧数据，已有联系人和聊天记录原样保留。
+    this.version(2).stores({
+      lorebooks: 'id, name, updatedAt',
+      characterLorebooks: 'id, characterId, lorebookId, &[characterId+lorebookId]',
     })
   }
 }

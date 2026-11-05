@@ -11,6 +11,9 @@ import CharacterEditPage from './pages/CharacterEditPage'
 import CharacterProfilePage from './pages/CharacterProfilePage'
 import ApiSettingsPage from './pages/ApiSettingsPage'
 import ProfileEditPage from './pages/ProfileEditPage'
+import ImportPage from './pages/ImportPage'
+import LorebooksPage from './pages/LorebooksPage'
+import LorebookDetailPage from './pages/LorebookDetailPage'
 
 function TabLayout() {
   return (
@@ -44,6 +47,9 @@ export default function App() {
       <Route path="character/:id/edit" element={<CharacterEditPage />} />
       <Route path="me/api" element={<ApiSettingsPage />} />
       <Route path="me/profile" element={<ProfileEditPage />} />
+      <Route path="import" element={<ImportPage />} />
+      <Route path="lorebooks" element={<LorebooksPage />} />
+      <Route path="lorebook/:id" element={<LorebookDetailPage />} />
       <Route path="*" element={<MessagesPage />} />
     </Routes>
   )

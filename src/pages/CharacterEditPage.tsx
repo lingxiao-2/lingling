@@ -17,6 +17,8 @@ const EMPTY: CharacterInput = {
   speakingStyle: '',
   backstory: '',
   relationToUser: '',
+  greeting: '',
+  exampleDialogue: '',
 }
 
 export default function CharacterEditPage() {
@@ -32,7 +34,17 @@ export default function CharacterEditPage() {
     if (loaded.current || !existing) return
     loaded.current = true
     const { name, avatar, bio, personality, speakingStyle, backstory, relationToUser } = existing
-    setForm({ name, avatar, bio, personality, speakingStyle, backstory, relationToUser })
+    setForm({
+      name,
+      avatar,
+      bio,
+      personality,
+      speakingStyle,
+      backstory,
+      relationToUser,
+      greeting: existing.greeting ?? '',
+      exampleDialogue: existing.exampleDialogue ?? '',
+    })
   }, [existing])
 
   const set = <K extends keyof CharacterInput>(k: K, v: CharacterInput[K]) =>
@@ -59,6 +71,8 @@ export default function CharacterEditPage() {
       speakingStyle: form.speakingStyle.trim(),
       backstory: form.backstory.trim(),
       relationToUser: form.relationToUser.trim(),
+      greeting: (form.greeting ?? '').trim(),
+      exampleDialogue: (form.exampleDialogue ?? '').trim(),
     }
     if (id) {
       await updateCharacter(id, data)
@@ -108,6 +122,25 @@ export default function CharacterEditPage() {
           <AreaField label="性格设定" rows={3} value={form.personality} onChange={(e) => set('personality', e.target.value)} placeholder="性格、喜好、价值观……" />
           <AreaField label="说话风格" rows={3} value={form.speakingStyle} onChange={(e) => set('speakingStyle', e.target.value)} placeholder="语气、口头禅、用词习惯……" />
           <AreaField label="背景故事" rows={5} value={form.backstory} onChange={(e) => set('backstory', e.target.value)} placeholder="TA 的经历与所处的世界" />
+        </Section>
+
+        <Section title="开场白与示例对话">
+          <AreaField
+            label="开场白"
+            rows={2}
+            value={form.greeting ?? ''}
+            onChange={(e) => set('greeting', e.target.value)}
+            placeholder="可选"
+            hint="只作为角色设定保存，不会自动写入聊天记录。"
+          />
+          <AreaField
+            label="示例对话"
+            rows={4}
+            value={form.exampleDialogue ?? ''}
+            onChange={(e) => set('exampleDialogue', e.target.value)}
+            placeholder="可选，用来示范 TA 的说话方式"
+            hint="示例对话不是你们真实的聊天历史，也不会进入记忆。"
+          />
         </Section>
 
         <div className="flex justify-center mt-6">

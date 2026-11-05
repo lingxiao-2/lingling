@@ -7,9 +7,11 @@ interface Props {
   back?: boolean | string
   right?: ReactNode
   subtitle?: ReactNode
+  /** 左右两侧的宽度（像素），右侧按钮较多时加宽，保持标题居中 */
+  sideWidth?: number
 }
 
-export default function NavBar({ title, back, right, subtitle }: Props) {
+export default function NavBar({ title, back, right, subtitle, sideWidth = 64 }: Props) {
   const nav = useNavigate()
   const goBack = () => (typeof back === 'string' ? nav(back) : nav(-1))
   return (
@@ -18,7 +20,7 @@ export default function NavBar({ title, back, right, subtitle }: Props) {
       style={{ paddingTop: 'var(--safe-top)' }}
     >
       <div className="h-12 flex items-center px-2 relative">
-        <div className="w-16 flex items-center">
+        <div className="flex items-center shrink-0" style={{ width: sideWidth }}>
           {back && (
             <button
               aria-label="返回"
@@ -33,7 +35,9 @@ export default function NavBar({ title, back, right, subtitle }: Props) {
           <div className="text-[16px] font-medium truncate leading-tight">{title}</div>
           {subtitle && <div className="text-[11px] text-[var(--c-text-3)] truncate">{subtitle}</div>}
         </div>
-        <div className="w-16 flex items-center justify-end gap-1">{right}</div>
+        <div className="flex items-center justify-end shrink-0" style={{ width: sideWidth }}>
+          {right}
+        </div>
       </div>
     </header>
   )

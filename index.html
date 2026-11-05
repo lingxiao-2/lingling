@@ -8,6 +8,19 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="聆聆 AI" />
     <title>聆聆 AI</title>
+    <!--
+      品牌字体：Noto Serif SC（只取「聆」一个字形）+ Cormorant Garamond（只取 LINGLING 字母），
+      均为 SIL OFL 开源授权。用 text= 子集，体积只有几 KB；media=print + onload 异步加载，
+      不阻塞首屏。网络无法访问 Google Fonts 时自动回退到 iOS 自带的宋体（Songti SC）。
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500&family=Cormorant+Garamond:wght@500&text=%E8%81%86LING&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
   </head>
   <body>
     <div id="root"></div>

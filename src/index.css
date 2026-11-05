@@ -18,6 +18,10 @@
   --c-danger: #c8605f;
   --radius-card: 18px;
   --font-serif-en: "Cormorant Garamond", "Playfair Display", Georgia, "Times New Roman", serif;
+  --font-serif-zh: "Noto Serif SC", "Songti SC", "STSongti-SC-Regular", "Source Han Serif SC", "Noto Serif CJK SC",
+    "SimSun", serif;
+  --c-brand: #3f5f80;
+  --c-brand-soft: #9db4cc;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -84,4 +88,47 @@ textarea {
 .title-en {
   font-family: var(--font-serif-en);
   letter-spacing: 0.04em;
+}
+
+/* ===== 品牌标题「聆聆 · LINGLING」===== */
+.brand {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  user-select: none;
+}
+.brand-zh {
+  font-family: var(--font-serif-zh);
+  font-weight: 500;
+  font-size: 21px;
+  letter-spacing: 0.32em;
+  /* 字距会在末字后多留空隙，用等量的负外边距抵消，保证视觉居中 */
+  margin-right: -0.32em;
+  color: var(--c-brand);
+}
+.brand-en {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-family: var(--font-serif-en);
+  font-weight: 500;
+  font-size: 8.5px;
+  color: var(--c-brand-soft);
+}
+.brand-en-text {
+  letter-spacing: 0.48em;
+  /* 抵消最后一个字母后的字距，让两侧装饰线对称 */
+  margin-right: -0.48em;
+}
+.brand-en::before,
+.brand-en::after {
+  content: "";
+  width: 10px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--c-brand-soft));
+}
+.brand-en::after {
+  background: linear-gradient(90deg, var(--c-brand-soft), transparent);
 }

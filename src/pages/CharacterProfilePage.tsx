@@ -5,9 +5,12 @@ import { Pencil } from 'lucide-react'
 import NavBar, { NavButton } from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import { ConfirmDialog } from '../components/Sheet'
+import PickerSheet from '../components/PickerSheet'
 import { PrimaryButton, Section } from '../components/ui'
 import { db } from '../db/db'
-import { deleteCharacter, getOrCreateSingleConversation } from '../db/repo'
+import { deleteCharacter, getOrCreateSingleConversation, linkLorebook, unlinkLorebook } from '../db/repo'
+import type { Lorebook } from '../db/schema'
+import { FORMAT_LABELS, type ImportFormat } from '../import/types'
 
 function Block({ label, text }: { label: string; text: string }) {
   return (
@@ -23,8 +26,17 @@ function Block({ label, text }: { label: string; text: string }) {
 export default function CharacterProfilePage() {
   const { id = '' } = useParams()
   const nav = useNavigate()
-  const c = useLiveQuery(() => db.characters.get(id), [id])
+  const c = useLiveQuery(async () => (await db.characters.get(id)) ?? null, [id])
   const [confirmDel, setConfirmDel] = useState(false)
+  const [picker, setPicker] = useState(false)
+  const [unlinkTarget, setUnlinkTarget] = useState<Lorebook | null>(null)
+  const allBooks = useLiveQuery(() => db.lorebooks.toArray(), [], [] as Lorebook[])
+  const linkedBookIds = useLiveQuery(
+    async () => (await db.characterLorebooks.where('characterId').equals(id).toArray()).map((l) => l.lorebookId),
+    [id],
+    [] as string[],
+  )
+  const linkedBooks = allBooks.filter((b) => linkedBookIds.includes(b.id))
 
   const chat = async () => {
     const convId = await getOrCreateSingleConversation(id)
@@ -67,6 +79,44 @@ export default function CharacterProfilePage() {
           <Block label="背景故事" text={c.backstory} />
         </Section>
 
+        {(c.greeting || c.exampleDialogue) && (
+          <Section title="开场白与示例对话（仅作设定，不是聊天记录）">
+            {c.greeting && <Block label="开场白" text={c.greeting} />}
+            {c.exampleDialogue && <Block label="示例对话" text={c.exampleDialogue} />}
+          </Section>
+        )}
+
+        <Section title="关联的世界书">
+          {linkedBooks.length === 0 && (
+            <div className="px-4 py-3 text-sm text-[var(--c-text-3)]">还没有关联世界书</div>
+          )}
+          {linkedBooks.map((b) => (
+            <div key={b.id} className="flex items-center gap-3 px-4 py-2.5 hairline-b">
+              <button onClick={() => nav(`/lorebook/${b.id}`)} className="press flex-1 min-w-0 text-left">
+                <div className="text-[15px] truncate">{b.name}</div>
+                <div className="text-xs text-[var(--c-text-3)]">{b.entries.length} 个条目</div>
+              </button>
+              <button
+                onClick={() => setUnlinkTarget(b)}
+                className="press shrink-0 text-xs text-[var(--c-text-2)] px-2.5 h-7 rounded-full border border-[var(--c-line)]"
+              >
+                解除关联
+              </button>
+            </div>
+          ))}
+          <button onClick={() => setPicker(true)} className="press w-full h-11 text-[15px] text-[var(--c-accent-strong)]">
+            添加世界书
+          </button>
+        </Section>
+
+        {c.importSource && (
+          <p className="mx-6 mt-3 text-[11px] leading-relaxed text-[var(--c-text-3)]">
+            导入自 {c.importSource.fileName}（
+            {FORMAT_LABELS[c.importSource.format as ImportFormat] ?? c.importSource.format}）
+            {c.extensions && Object.keys(c.extensions).length > 0 && '，未识别的原始字段已保留在扩展数据中'}
+          </p>
+        )}
+
         <div className="flex justify-center mt-6">
           <PrimaryButton onClick={() => void chat()}>发消息</PrimaryButton>
         </div>
@@ -77,10 +127,36 @@ export default function CharacterProfilePage() {
         </div>
       </div>
 
+      {picker && (
+        <PickerSheet
+          title="添加世界书"
+          showAvatar={false}
+          options={allBooks
+            .filter((b) => !linkedBookIds.includes(b.id))
+            .map((b) => ({ id: b.id, name: b.name, hint: `${b.entries.length} 个条目` }))}
+          emptyText={allBooks.length ? '所有世界书都已关联' : '还没有世界书，请先到「联系人 → 世界书」导入'}
+          onClose={() => setPicker(false)}
+          onConfirm={(ids) => {
+            void Promise.all(ids.map((bid) => linkLorebook(id, bid)))
+          }}
+        />
+      )}
+      {unlinkTarget && (
+        <ConfirmDialog
+          title="解除关联？"
+          message={`「${unlinkTarget.name}」将不再关联到这个角色。世界书本身不会被删除。`}
+          confirmText="解除"
+          onCancel={() => setUnlinkTarget(null)}
+          onConfirm={() => {
+            void unlinkLorebook(id, unlinkTarget.id)
+            setUnlinkTarget(null)
+          }}
+        />
+      )}
       {confirmDel && (
         <ConfirmDialog
           title={`删除「${c.name}」？`}
-          message="该角色、与 TA 的聊天记录和相关记忆都会被永久删除，无法恢复。"
+          message="该角色、与 TA 的聊天记录和相关记忆都会被永久删除，无法恢复。关联的世界书会保留，只解除关联。"
           confirmText="删除"
           danger
           onCancel={() => setConfirmDel(false)}
