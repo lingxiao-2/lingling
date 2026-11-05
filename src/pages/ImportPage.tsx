@@ -654,8 +654,14 @@ export default function ImportPage() {
               <Icon name="file" size="xs" />
               <span className="truncate">{f.fileName}</span>
               <span className="shrink-0">
-                · {f.container && !['json', 'txt', 'md'].includes(f.container) ? `${containerLabel(f.container)} · ` : ''}
-                {f.doc?.pages ? `${f.doc.pages} 页` : FORMAT_LABELS[f.format]}
+                ·{' '}
+                {f.container === 'docx'
+                  ? containerLabel('docx')
+                  : f.container === 'pdf'
+                    ? `${containerLabel('pdf')} · ${f.doc?.pages ?? 0} 页`
+                    : f.container && !['json', 'txt', 'md'].includes(f.container)
+                      ? `${containerLabel(f.container)} · ${FORMAT_LABELS[f.format]}`
+                      : FORMAT_LABELS[f.format]}
               </span>
             </div>
             {f.doc && (

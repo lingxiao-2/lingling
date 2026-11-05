@@ -1,5 +1,5 @@
 import type { ReactNode, InputHTMLAttributes, TextareaHTMLAttributes } from 'react'
-import { Icon } from '../theme/icons'
+import { Icon, type IconName } from '../theme/icons'
 
 export function SearchBox({
   value,
@@ -73,22 +73,28 @@ export function Row({
   value,
   onClick,
   right,
+  icon,
 }: {
   label: string
   value?: ReactNode
   onClick?: () => void
   right?: ReactNode
+  /** 可选：左侧 16px 细线图标 */
+  icon?: IconName
 }) {
   const Tag = onClick ? 'button' : 'div'
   return (
     <Tag
       onClick={onClick}
-      className={`w-full min-h-12 px-4 py-3 flex items-center justify-between gap-3 text-left text-[15px] hairline-b last:border-b-0 ${
+      className={`w-full min-h-[46px] px-4 py-2.5 flex items-center justify-between gap-3 text-left text-[14.5px] hairline-b last:border-b-0 ${
         onClick ? 'press' : ''
       }`}
     >
-      <span>{label}</span>
-      <span className="flex items-center gap-2 text-[var(--c-text-3)] text-sm min-w-0">
+      <span className="flex items-center gap-2.5 min-w-0">
+        {icon && <Icon name={icon} size="sm" className="shrink-0 text-[var(--c-accent-strong)]" />}
+        <span className="truncate">{label}</span>
+      </span>
+      <span className="flex items-center gap-1.5 text-[var(--c-text-3)] text-[13px] min-w-0 shrink-0">
         {value}
         {right}
       </span>

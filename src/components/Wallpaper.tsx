@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import type { CSSProperties } from 'react'
-import { applyThemeOverrides, useThemeSettings, type WallpaperSetting } from '../theme/theme'
+import { applyThemeVars, themeVars, useThemeSettings, type ThemeSettings, type WallpaperSetting } from '../theme/theme'
+import { applyCustomIcons } from '../theme/icons'
 
 /**
  * 原创的默认雪景壁纸（程序生成，不使用任何外部素材）：
@@ -63,13 +64,34 @@ export function wallpaperStyle(w: WallpaperSetting): CSSProperties {
  */
 export default function Wallpaper({ veil = 'list' }: { veil?: 'list' | 'chat' | 'none' }) {
   const theme = useThemeSettings()
-  useEffect(() => applyThemeOverrides(theme.overrides), [theme.overrides])
+  const vars = useMemo(() => themeVars(theme), [theme])
+  useEffect(() => applyThemeVars(vars), [vars])
+  useEffect(() => applyCustomIcons(theme.customIcons), [theme.customIcons])
   const style = useMemo(() => wallpaperStyle(theme.wallpaper), [theme.wallpaper])
   return (
     <div aria-hidden="true" className="fixed inset-0 -z-10 pointer-events-none" style={style}>
       {veil !== 'none' && (
         <div className="absolute inset-0" style={{ background: veil === 'chat' ? 'var(--veil-chat)' : 'var(--veil-list)' }} />
       )}
+    </div>
+  )
+}
+
+/** 聊天页使用的壁纸：单独设置的聊天壁纸，或跟随应用壁纸 */
+export function chatWallpaperOf(t: ThemeSettings): WallpaperSetting {
+  return t.chatWallpaper.kind === 'inherit' ? t.wallpaper : t.chatWallpaper
+}
+
+/**
+ * 聊天背景层：覆盖在全局壁纸之上（同样不接收点击），薄雾更淡，让壁纸更清晰。
+ * 文字可读性由毛玻璃气泡与输入栏保证；壁纸永远在最底层，不会遮挡文字或按钮。
+ */
+export function ChatWallpaper() {
+  const theme = useThemeSettings()
+  const style = useMemo(() => wallpaperStyle(chatWallpaperOf(theme)), [theme])
+  return (
+    <div aria-hidden="true" className="fixed inset-0 -z-[5] pointer-events-none" style={style}>
+      <div className="absolute inset-0" style={{ background: 'var(--veil-chat)' }} />
     </div>
   )
 }

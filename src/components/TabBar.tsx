@@ -19,20 +19,20 @@ export default function TabBar() {
 
   return (
     <nav className="shrink-0 relative z-10 px-3 pt-1.5" style={{ paddingBottom: 'calc(var(--safe-bottom) + 6px)' }}>
-      <div className="glass-1 h-[56px] rounded-[24px] grid grid-cols-4 shadow-[var(--shadow-float)]">
+      <div className="glass-1 h-[52px] rounded-[22px] grid grid-cols-4 shadow-[var(--shadow-float)]">
         {TABS.map(({ to, label, icon, end }) => (
           <NavLink
             key={to}
             to={to}
             end={end}
             className={({ isActive }) =>
-              `press relative flex flex-col items-center justify-center gap-[3px] text-[10px] tracking-wider ${
+              `press relative flex flex-col items-center justify-center gap-[2px] text-[10px] tracking-wider ${
                 isActive ? 'text-[var(--c-accent-strong)]' : 'text-[var(--c-text-3)]'
               }`
             }
           >
             <span className="relative">
-              <Icon name={icon} size="lg" stroke="thin" />
+              <Icon name={icon} size="md" stroke="thin" />
               {to === '/' && unread > 0 && (
                 <span className="absolute -top-1 -right-2.5 min-w-[15px] h-[15px] px-1 rounded-full bg-[var(--c-danger)] text-white text-[9px] leading-[15px] text-center">
                   {unread > 99 ? '99+' : unread}

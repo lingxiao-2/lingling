@@ -9,6 +9,9 @@ import NavBar, { NavButton } from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import { ActionSheet } from '../components/Sheet'
 import { useProfile } from '../store/profile'
+import { ChatWallpaper } from '../components/Wallpaper'
+import { useThemeSettings } from '../theme/theme'
+import { DEFAULT_WORLD_ID } from '../db/schema'
 import { formatChatTime } from '../lib/util'
 import { useLongPress } from '../lib/usePress'
 
@@ -39,25 +42,30 @@ function Bubble({
   mine,
   name,
   avatar,
+  ornament,
   onMenu,
 }: {
   msg: Message
   mine: boolean
   name: string
   avatar?: string
+  ornament: boolean
   onMenu: () => void
 }) {
   const press = useLongPress(onMenu)
   return (
-    <div className={`flex items-start gap-2.5 px-3 ${mine ? 'flex-row-reverse' : ''}`}>
-      <Avatar name={name} src={avatar} size="chat" />
-      <div className={`flex flex-col max-w-[72%] ${mine ? 'items-end' : 'items-start'}`}>
+    <div className={`flex items-start gap-2 px-3.5 ${mine ? 'justify-end' : ''}`}>
+      {/* 只为对方显示小头像；自己的消息靠右，保持留白 */}
+      {!mine && (
+        <div className="pt-0.5">
+          <Avatar name={name} src={avatar} size="chat" />
+        </div>
+      )}
+      <div className={`flex flex-col max-w-[74%] ${mine ? 'items-end' : 'items-start'}`}>
         <div
           {...press}
-          className={`select-none whitespace-pre-wrap break-words px-3.5 py-2.5 rounded-2xl text-[15.5px] leading-relaxed shadow-[0_1px_2px_rgba(60,90,130,0.08)] ${
-            mine
-              ? 'bg-[var(--c-bubble-me)] rounded-tr-md'
-              : 'bg-[var(--c-bubble-them)] rounded-tl-md'
+          className={`bubble select-none whitespace-pre-wrap break-words ${mine ? 'bubble-me' : 'bubble-them'} ${
+            ornament ? 'bubble-ornament' : ''
           }`}
           style={{ WebkitTouchCallout: 'none' }}
         >
@@ -69,16 +77,24 @@ function Bubble({
   )
 }
 
+const WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
 export default function ChatPage() {
   const { convId = '' } = useParams()
   const nav = useNavigate()
   const profile = useProfile()
+  const theme = useThemeSettings()
 
   const conv = useLiveQuery(async () => (await db.conversations.get(convId)) ?? null, [convId])
   const charId = conv?.characterIds[0]
   const character = useLiveQuery(
     async () => (charId ? (await db.characters.get(charId)) ?? null : null),
     [charId],
+  )
+  const worldId = character?.worldId
+  const worldName = useLiveQuery(
+    async () => (worldId && worldId !== DEFAULT_WORLD_ID ? (await db.worlds.get(worldId))?.name ?? null : null),
+    [worldId],
   )
   const messages = useLiveQuery(
     () => db.messages.where('conversationId').equals(convId).sortBy('createdAt'),
@@ -200,11 +216,15 @@ export default function ChatPage() {
   }
 
   const title = character?.name ?? ''
+  const firstAt = visible[0]?.createdAt ?? Date.now()
+  const firstDate = new Date(firstAt)
 
   return (
     <div className="h-dvh flex flex-col">
+      <ChatWallpaper />
       <NavBar
         title={title}
+        subtitle={worldName ?? undefined}
         back="/"
         right={
           charId && (
@@ -217,11 +237,18 @@ export default function ChatPage() {
         <div
           ref={scrollRef}
           onScroll={onScroll}
-          className="h-full overflow-y-auto py-3 flex flex-col gap-3"
+          className="h-full overflow-y-auto pt-2 pb-4 flex flex-col gap-3.5"
           style={{ overscrollBehavior: 'contain' }}
         >
-          <div className="mx-auto max-w-[85%] text-center text-[11px] leading-relaxed text-[var(--c-text-3)] px-3 py-1.5 rounded-full bg-white/50">
-            当前版本只保存你发出的消息，AI 回复将在下一轮开发中接入
+          {/* 信笺抬头：日期胶囊 + 花体小字（纯装饰，不代表任何状态） */}
+          <div className="flex flex-col items-center gap-2 pt-1">
+            <span className="pill">
+              {firstDate.getMonth() + 1}月{firstDate.getDate()}日 · {WEEK[firstDate.getDay()]}
+            </span>
+            <div className="flourish w-[78%] text-[17px]">
+              <span className="script-en whitespace-nowrap">A letter from winter</span>
+            </div>
+            <span className="text-[10.5px] text-[var(--c-text-3)] tracking-wide">AI 回复将在下一轮接入，目前只保存你写下的消息</span>
           </div>
 
           {visible.map((m, i) => {
@@ -229,9 +256,9 @@ export default function ChatPage() {
             const mine = m.senderType === 'user'
             return (
               <div key={m.id} className="flex flex-col gap-3">
-                {(!prev || m.createdAt - prev.createdAt > GAP_MS) && (
-                  <div className="text-center text-[11px] text-[var(--c-text-3)]">
-                    {formatChatTime(m.createdAt)}
+                {prev && m.createdAt - prev.createdAt > GAP_MS && (
+                  <div className="flex justify-center">
+                    <span className="pill">{formatChatTime(m.createdAt)}</span>
                   </div>
                 )}
                 <Bubble
@@ -239,6 +266,7 @@ export default function ChatPage() {
                   mine={mine}
                   name={mine ? profile.nickname : title}
                   avatar={mine ? profile.avatar : character?.avatar}
+                  ornament={theme.bubble.ornament}
                   onMenu={() => setMenuMsg(m)}
                 />
               </div>
@@ -249,7 +277,7 @@ export default function ChatPage() {
         {showJump && (
           <button
             onClick={() => scrollToBottom(true)}
-            className="press absolute right-4 bottom-3 h-9 pl-3 pr-3.5 rounded-full glass shadow-md flex items-center gap-1 text-xs text-[var(--c-accent-strong)]"
+            className="press absolute right-4 bottom-2 h-8 pl-2.5 pr-3 rounded-full glass-1 shadow-[var(--shadow-soft)] flex items-center gap-1 text-[12px] text-[var(--c-accent-strong)]"
           >
             <Icon name="scrollDown" size="xs" />
             回到底部
@@ -257,28 +285,28 @@ export default function ChatPage() {
         )}
       </div>
 
-      <footer
-        className="glass hairline-t shrink-0 px-3 pt-2"
-        style={{ paddingBottom: 'calc(var(--safe-bottom) + 8px)' }}
-      >
-        <div className="flex items-end gap-2">
+      {/* 悬浮输入栏：只保留真实可用的发送按钮 */}
+      <footer className="shrink-0 relative z-10 px-3 pt-1.5" style={{ paddingBottom: 'calc(var(--safe-bottom) + 8px)' }}>
+        <div className="glass-1 rounded-[24px] p-1.5 flex items-end gap-1.5 shadow-[var(--shadow-float)]">
           <textarea
             ref={taRef}
             rows={1}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="输入消息"
+            placeholder={title ? `写一封信给${title}……` : '写一封信……'}
             enterKeyHint="enter"
-            className="flex-1 min-w-0 resize-none rounded-2xl bg-white/90 px-3.5 py-2.5 text-[16px] leading-snug outline-none"
+            className="flex-1 min-w-0 resize-none rounded-[19px] bg-white/55 border border-white/70 px-3.5 py-[7px] text-[16px] leading-snug outline-none placeholder:text-[var(--c-text-3)]"
             style={{ maxHeight: MAX_INPUT_HEIGHT }}
           />
           <button
             aria-label="发送"
             onClick={() => void send()}
             disabled={!text.trim()}
-            className="press h-10 w-10 shrink-0 rounded-full bg-[var(--c-accent)] text-white flex items-center justify-center disabled:opacity-35"
+            className={`press h-[34px] w-[34px] shrink-0 rounded-full flex items-center justify-center transition-colors ${
+              text.trim() ? 'bg-[var(--c-accent)] text-white' : 'bg-white/50 text-[var(--c-text-3)]'
+            }`}
           >
-            <Icon name="send" size="md" />
+            <Icon name="send" size="sm" />
           </button>
         </div>
       </footer>
