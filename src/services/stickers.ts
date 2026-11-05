@@ -4,7 +4,8 @@
  * 校验：
  *  - 只接受 PNG / JPEG / WebP / GIF，按文件头（魔数）判断真实类型，不信任扩展名和 MIME；SVG 等一律拒绝
  *  - 原文件不超过 5 MB；能被浏览器正常解码；尺寸不超过 4096 px
- *  - 静态图片较大时缩小到 512 px 以内再保存；GIF 保留原文件（保留动画），保存后不超过 1.5 MB
+ *  - 保留原始比例与透明背景；GIF 保留原文件（保留动画）；静态大图缩小到 1024 px 以内
+ *  - 另存一张约 160 px 的静态缩略图，用于表情面板（避免一次读入几百张原图）
  */
 import type { Sticker } from '../db/schema'
 
@@ -16,11 +17,13 @@ export const STICKER_LIMITS = {
   /** 保存到本机的上限 */
   storedBytes: 1.5 * 1024 * 1024,
   /** 静态图片保存时的最大边长 */
-  maxSide: 512,
+  maxSide: 1024,
+  /** 缩略图边长 */
+  thumbSide: 160,
   /** 原图最大边长（防止超大图片耗尽内存） */
   maxInputSide: 4096,
   /** 收藏数量上限 */
-  maxCount: 300,
+  maxCount: 600,
 }
 
 export class StickerError extends Error {}
@@ -81,43 +84,64 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 export interface PreparedSticker {
   dataUrl: string
+  thumbUrl: string
+  hash: string
   mime: StickerMime
   width: number
   height: number
   bytes: number
 }
 
-/** 浏览器端：校验并整理用户选择的图片（不联网） */
-export async function prepareSticker(file: File): Promise<PreparedSticker> {
-  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer())
-  const type = checkStickerFile(head, file.size)
+/** 原图内容的 SHA-256（十六进制）：用于去重与识别结果缓存 */
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', bytes as unknown as ArrayBuffer)
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function canvasOf(w: number, h: number): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = Math.max(1, Math.round(w))
+  c.height = Math.max(1, Math.round(h))
+  return c
+}
+
+function drawScaled(img: CanvasImageSource, w: number, h: number, maxSide: number, type: 'image/png' | 'image/jpeg', quality = 0.88): string {
+  const k = Math.min(1, maxSide / Math.max(w, h))
+  const c = canvasOf(w * k, h * k)
+  const g = c.getContext('2d')
+  if (!g) throw new StickerError('图片处理失败')
+  g.drawImage(img, 0, 0, c.width, c.height)
+  return c.toDataURL(type, quality)
+}
+
+/** 浏览器端：校验并整理一张图片（不联网）。name 只用于错误提示 */
+export async function prepareStickerBytes(bytes: Uint8Array): Promise<PreparedSticker> {
+  const type = checkStickerFile(bytes.subarray(0, 16), bytes.length)
+  const hash = await sha256Hex(bytes)
   // 以真实类型重新包装，避免文件声明的 MIME 与内容不符
-  const original = await readAsDataURL(new Blob([file], { type }))
+  const original = await readAsDataURL(new Blob([bytes as BlobPart], { type }))
   const img = await loadImage(original)
   const w = img.naturalWidth
   const h = img.naturalHeight
   if (!w || !h) throw new StickerError('图片无法打开，文件可能已损坏')
-  if (w > STICKER_LIMITS.maxInputSide || h > STICKER_LIMITS.maxInputSide) throw new StickerError('图片尺寸太大了，请选择 4096 像素以内的图片')
+  if (w > STICKER_LIMITS.maxInputSide || h > STICKER_LIMITS.maxInputSide) throw new StickerError('图片尺寸太大了（超过 4096 像素）')
+  // 有透明通道的格式导出 PNG，JPEG 仍为 JPEG
+  const flat: 'image/png' | 'image/jpeg' = type === 'image/jpeg' ? 'image/jpeg' : 'image/png'
+  const thumbUrl = drawScaled(img, w, h, STICKER_LIMITS.thumbSide, flat, 0.8)
 
-  const side = STICKER_LIMITS.maxSide
-  if (type === 'image/gif' || (Math.max(w, h) <= side && file.size <= 300 * 1024)) {
-    const bytes = dataUrlBytes(original)
-    if (bytes > STICKER_LIMITS.storedBytes) throw new StickerError('动图太大了，请选择 1.5 MB 以内的 GIF')
-    return { dataUrl: original, mime: type, width: w, height: h, bytes }
+  if (type === 'image/gif' || (Math.max(w, h) <= STICKER_LIMITS.maxSide && bytes.length <= STICKER_LIMITS.storedBytes)) {
+    const size = dataUrlBytes(original)
+    if (size > STICKER_LIMITS.storedBytes) throw new StickerError('动图太大了（超过 1.5 MB）')
+    return { dataUrl: original, thumbUrl, hash, mime: type, width: w, height: h, bytes: size }
   }
-  // 静态图片：缩小到 512 px 以内。PNG / WebP 可能有透明背景，导出为 PNG；JPEG 导出为 JPEG
-  const k = Math.min(1, side / Math.max(w, h))
-  const cw = Math.max(1, Math.round(w * k))
-  const ch = Math.max(1, Math.round(h * k))
-  const canvas = document.createElement('canvas')
-  canvas.width = cw
-  canvas.height = ch
-  const g = canvas.getContext('2d')
-  if (!g) throw new StickerError('图片处理失败')
-  g.drawImage(img, 0, 0, cw, ch)
-  const outType: StickerMime = type === 'image/jpeg' ? 'image/jpeg' : 'image/png'
-  const dataUrl = canvas.toDataURL(outType, 0.9)
-  const bytes = dataUrlBytes(dataUrl)
-  if (bytes > STICKER_LIMITS.storedBytes) throw new StickerError('图片处理后仍然太大，请换一张')
-  return { dataUrl, mime: outType, width: cw, height: ch, bytes }
+  const k = Math.min(1, STICKER_LIMITS.maxSide / Math.max(w, h))
+  const dataUrl = drawScaled(img, w, h, STICKER_LIMITS.maxSide, flat, 0.9)
+  const size = dataUrlBytes(dataUrl)
+  if (size > STICKER_LIMITS.storedBytes) throw new StickerError('图片处理后仍然太大，请换一张')
+  return { dataUrl, thumbUrl, hash, mime: flat, width: Math.round(w * k), height: Math.round(h * k), bytes: size }
+}
+
+export async function prepareSticker(file: File): Promise<PreparedSticker> {
+  if (file.size > STICKER_LIMITS.inputBytes) checkStickerFile(new Uint8Array(16), file.size)
+  return prepareStickerBytes(new Uint8Array(await file.arrayBuffer()))
 }

@@ -77,7 +77,7 @@ export function formatSection(freq: NonNullable<ChatStyle['stickers']>, stickers
     lines.push(
       `· 表情包：单独一条写 <sticker id="编号"/>，只能使用下面列表中的编号，不能编造；${
         freq === 'often' ? '可以比较常发，但一次最多一个，并且要贴合情境' : '偶尔在合适的时候发，大多数回复不需要'
-      }。`,
+      }。按表情包的情绪和适合的场景挑选，要符合你的性格；没有合适的就只发文字。可以只发表情包，也可以文字和表情包一起发。`,
       `可用表情包：${stickers.map((s) => `${s.alias}=${s.name}`).join('；')}`,
     )
   }

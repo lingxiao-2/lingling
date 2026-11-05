@@ -5,9 +5,12 @@
  */
 import type { AIConfig } from '../../db/schema'
 
+/** OpenAI 兼容的多模态内容（只在支持图片的模型上使用） */
+export type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' } }
+
 export interface ChatTurn {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | ContentPart[]
 }
 
 export interface GenerateOptions {

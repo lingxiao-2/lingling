@@ -106,6 +106,7 @@ export default function MePage() {
 
         <Group en="Appearance">
           <Row icon="theme" label="主题与壁纸" value="冬日来信" onClick={() => nav('/me/theme')} right={<Icon name="forward" size="sm" />} />
+          <Row icon="emoji" label="表情包与识图" onClick={() => nav('/me/stickers')} right={<Icon name="forward" size="sm" />} />
         </Group>
 
         <Group en="AI">

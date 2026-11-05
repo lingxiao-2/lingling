@@ -125,7 +125,7 @@ test('系统提示：诚实说明是 AI、不诱导依赖', () => {
 })
 
 const sticker = (id: string, name: string, extra: Partial<Sticker> = {}): Sticker => ({
-  id, packId: 'mine', name, dataUrl: 'data:image/png;base64,AAAA', mime: 'image/png', width: 1, height: 1, bytes: 3,
+  id, packId: 'mine', name, thumbUrl: 'data:image/png;base64,AAAA', mime: 'image/png', width: 1, height: 1, bytes: 3,
   favorite: false, aiUsable: true, createdAt: 0, updatedAt: 0, ...extra,
 })
 
