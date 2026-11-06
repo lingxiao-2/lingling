@@ -8,7 +8,8 @@
 import { APP_IDS, isAppId, type AppId } from './apps'
 
 export const GRID = { cols: 4, rows: 6, pages: 3, dock: 4 }
-export const LAYOUT_VERSION = 1
+/** 1：只有应用（第四阶段 PR A/B）· 2：加入默认小组件（PR C） */
+export const LAYOUT_VERSION = 2
 
 export type WidgetKind = 'clock' | 'music' | 'note' | 'character'
 export type WidgetSize = 'small' | 'medium'
@@ -29,12 +30,21 @@ export const DEFAULT_DOCK: AppId[] = ['messages', 'contacts', 'moments', 'me']
 
 const app = (id: AppId): DesktopItem => ({ kind: 'app', app: id })
 
+/** 默认小组件（v2 起）：第 1 页时间日期、便签、角色；第 2 页音乐 */
+export const DEFAULT_WIDGETS: { page: number; item: Extract<DesktopItem, { kind: 'widget' }> }[] = [
+  { page: 0, item: { kind: 'widget', id: 'w-clock', widget: 'clock', size: 'medium' } },
+  { page: 0, item: { kind: 'widget', id: 'w-note', widget: 'note', size: 'small' } },
+  { page: 0, item: { kind: 'widget', id: 'w-character', widget: 'character', size: 'small' } },
+  { page: 1, item: { kind: 'widget', id: 'w-music', widget: 'music', size: 'medium' } },
+]
+
 export function defaultLayout(): DesktopLayout {
+  const widgetsOn = (p: number) => DEFAULT_WIDGETS.filter((w) => w.page === p).map((w) => ({ ...w.item }))
   return {
     version: LAYOUT_VERSION,
     pages: [
-      ['memory', 'album', 'diary', 'notes', 'calendar', 'music', 'clock', 'weather'].map((x) => app(x as AppId)),
-      ['mail', 'gift', 'tarot', 'theme'].map((x) => app(x as AppId)),
+      [...widgetsOn(0), ...['memory', 'album', 'diary', 'notes', 'calendar', 'music', 'clock', 'weather'].map((x) => app(x as AppId))],
+      [...widgetsOn(1), ...['mail', 'gift', 'tarot', 'theme'].map((x) => app(x as AppId))],
       ['worlds', 'lorebooks', 'stickers', 'backup', 'ai'].map((x) => app(x as AppId)),
     ],
     dock: [...DEFAULT_DOCK],
@@ -87,6 +97,11 @@ export function normalizeLayout(raw: unknown): DesktopLayout {
     }
     pages.push(out)
   }
+  // 旧版本（v1）的布局先加入默认小组件，再补缺失的应用，避免应用先占满小组件的位置
+  if ((typeof r.version === 'number' ? r.version : 1) < 2) {
+    const migrated = migrateToV2({ version: 1, pages, dock, page: 0 }).pages
+    pages.splice(0, pages.length, ...migrated)
+  }
   // 新版本增加的应用（或丢失的应用）：补到有空位的页
   for (const id of APP_IDS) {
     if (seen.has(id)) continue
@@ -96,6 +111,36 @@ export function normalizeLayout(raw: unknown): DesktopLayout {
   }
   const page = typeof r.page === 'number' && Number.isInteger(r.page) ? Math.min(Math.max(r.page, 0), GRID.pages - 1) : 0
   return { version: LAYOUT_VERSION, pages, dock, page }
+}
+
+/**
+ * v1 → v2：用户之前保存的布局里没有小组件。把默认小组件加到它原本所在页的最前面；
+ * 那一页放不下就放到后面有空位的页，都放不下就不加。用户自己排好的应用顺序和 Dock 不变。
+ */
+export function migrateToV2(l: DesktopLayout): DesktopLayout {
+  const pages = l.pages.map((p) => [...p])
+  const has = new Set(pages.flat().flatMap((x) => (x.kind === 'widget' ? [x.id] : [])))
+  // 倒序插入，保证同一页内的顺序与默认布局一致
+  for (const w of [...DEFAULT_WIDGETS].reverse()) {
+    if (has.has(w.item.id)) continue
+    for (let i = 0; i < pages.length; i++) {
+      const p = (w.page + i) % pages.length
+      const trial = [{ ...w.item }, ...pages[p]]
+      if (fits(trial)) {
+        pages[p] = trial
+        break
+      }
+    }
+  }
+  return { ...l, version: 2, pages }
+}
+
+/** 设置角色小组件显示的角色 */
+export function setWidgetCharacter(l: DesktopLayout, widgetId: string, characterId: string | undefined): DesktopLayout {
+  return {
+    ...l,
+    pages: l.pages.map((p) => p.map((it) => (it.kind === 'widget' && it.id === widgetId ? { ...it, characterId } : it))),
+  }
 }
 
 /** 桌面上的一个位置：某一页的第几个，或 Dock 的第几个 */

@@ -6,7 +6,7 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { defaultLayout, normalizeLayout, setPage, type DesktopLayout } from './layout'
+import { defaultLayout, normalizeLayout, setPage, setWidgetCharacter, type DesktopLayout } from './layout'
 
 export const LAYOUT_KEY = 'desktop-layout'
 
@@ -56,4 +56,31 @@ export function useDesktopLayout(): DesktopLayout | undefined {
     const row = await db.settings.get(LAYOUT_KEY)
     return row ? normalizeLayout(row.value) : undefined
   }, [])
+}
+
+/** 角色小组件换一个角色（在同一个事务里读取最新布局，只改这一个小组件） */
+export async function saveWidgetCharacter(widgetId: string, characterId: string | undefined): Promise<void> {
+  await db.transaction('rw', [db.settings], async () => {
+    const row = await db.settings.get(LAYOUT_KEY)
+    const cur = row ? normalizeLayout(row.value) : defaultLayout()
+    await db.settings.put({ key: LAYOUT_KEY, value: setWidgetCharacter(cur, widgetId, characterId) })
+  })
+}
+
+/** 桌面便签小组件的内容（轻量，保存在 settings 的 desktop-note；以后与完整便签 / 日记应用联动） */
+export const NOTE_KEY = 'desktop-note'
+export interface DesktopNote {
+  text: string
+  updatedAt: number
+}
+export const NOTE_MAX = 200
+
+export async function saveNote(text: string): Promise<DesktopNote> {
+  const note = { text: text.replace(/\r\n/g, '\n').trim().slice(0, NOTE_MAX), updatedAt: Date.now() }
+  await db.settings.put({ key: NOTE_KEY, value: note })
+  return note
+}
+
+export function useDesktopNote(): DesktopNote | undefined {
+  return useLiveQuery(async () => (await db.settings.get(NOTE_KEY))?.value as DesktopNote | undefined, [])
 }
