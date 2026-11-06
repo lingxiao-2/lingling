@@ -468,47 +468,95 @@ body {
 }
 
 /* ---------- 虚拟手机桌面 ---------- */
+/* 冰晶玻璃图标底座：半透明珍珠白、顶部细高光、0.5px 白色内描边、底部一点冰蓝反光；尺寸来自 --desk-icon（46–52px） */
 .desk-icon {
-  width: var(--desk-icon, 60px);
-  height: var(--desk-icon, 60px);
-  border-radius: calc(var(--desk-icon, 60px) * 0.235);
+  position: relative;
+  width: var(--desk-icon, 50px);
+  height: var(--desk-icon, 50px);
+  border-radius: calc(var(--desk-icon, 50px) * 0.28);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--c-accent-strong);
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.78), rgba(232, 240, 249, 0.6));
+  color: #5f82ab;
+  background:
+    radial-gradient(120% 70% at 30% 0%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 60%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.58) 0%, rgba(232, 240, 249, 0.38) 55%, rgba(210, 225, 242, 0.42) 100%);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.85),
-    inset 0 -6px 12px rgba(160, 188, 220, 0.18),
-    0 3px 10px rgba(80, 110, 155, 0.14);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
+    inset 0 0.5px 0 rgba(255, 255, 255, 1),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.8),
+    inset 0 -5px 9px rgba(160, 188, 222, 0.2),
+    0 1.5px 3px rgba(70, 100, 145, 0.1),
+    0 8px 16px -8px rgba(70, 100, 145, 0.28);
+  -webkit-backdrop-filter: blur(12px) saturate(1.25);
+  backdrop-filter: blur(12px) saturate(1.25);
 }
+/* 左上角一点冰晶反光 */
+.desk-icon::after {
+  content: "";
+  position: absolute;
+  left: 18%;
+  top: 9%;
+  width: 26%;
+  height: 12%;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  filter: blur(1.5px);
+  transform: rotate(-18deg);
+  pointer-events: none;
+}
+/* 图标内部：统一 1.4px 细线，线宽不随图标大小缩放 */
 .desk-icon svg {
-  width: calc(var(--desk-icon, 60px) * 0.45);
-  height: calc(var(--desk-icon, 60px) * 0.45);
+  width: calc(var(--desk-icon, 50px) * 0.44);
+  height: calc(var(--desk-icon, 50px) * 0.44);
+  stroke-width: 1.4px;
 }
-/* 待开发的应用：右下角一个小雪点，名称旁不加文字，打开后有说明 */
+.desk-icon svg * {
+  vector-effect: non-scaling-stroke;
+}
+/* 待开发的应用：右下角一个很小的银点 */
 .desk-icon-soon {
   position: absolute;
-  right: 6px;
-  bottom: 6px;
-  width: 5px;
-  height: 5px;
+  right: 5px;
+  bottom: 5px;
+  width: 3.5px;
+  height: 3.5px;
   border-radius: 999px;
-  background: var(--c-text-3);
-  opacity: 0.55;
+  background: #9fb3cc;
+  opacity: 0.7;
 }
 .desk-label {
-  max-width: 76px;
+  max-width: calc(var(--desk-icon, 50px) + 22px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 10.5px;
   line-height: 13px;
-  letter-spacing: 0.02em;
-  color: var(--c-text);
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.04em;
+  color: #4a5f7b;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.9), 0 1px 1px rgba(255, 255, 255, 0.8);
+}
+.desk-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: inset 0 0 0 0.5px rgba(120, 150, 190, 0.4);
+  transition: width 0.2s, background 0.2s;
+}
+.desk-dot-on {
+  width: 14px;
+  background: linear-gradient(90deg, #a9bfd9, #6f90b8);
+  box-shadow: none;
+}
+@keyframes desk-twinkle {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.6); opacity: 0.25; }
+}
+.desk-twinkle {
+  animation: desk-twinkle 4.5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .desk-twinkle { animation: none; }
 }
 .desk-pager {
   scroll-snap-type: x mandatory;
@@ -524,12 +572,14 @@ body {
   scroll-snap-stop: always;
 }
 .desk-dock {
-  background: rgba(255, 255, 255, 0.36);
-  -webkit-backdrop-filter: blur(22px) saturate(1.3);
-  backdrop-filter: blur(22px) saturate(1.3);
+  border-radius: calc(var(--desk-icon, 50px) * 0.5 + 12px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(236, 243, 250, 0.24));
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  backdrop-filter: blur(24px) saturate(1.35);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.7),
-    0 8px 28px rgba(80, 110, 155, 0.14);
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.6),
+    0 10px 30px -12px rgba(70, 100, 145, 0.3);
 }
 .desk {
   -webkit-touch-callout: none;
@@ -561,14 +611,37 @@ body {
     0 0 0 2px var(--c-accent),
     0 8px 28px rgba(80, 110, 155, 0.14);
 }
+/* 小组件与图标同一网格：左右缩进半个列间距，高度 = 一行 + 一个图标（与第二行图标底部对齐） */
+.desk-wslot {
+  padding: 0 calc(var(--desk-gap, 36px) / 2);
+}
+.desk-wslot > * {
+  height: calc(var(--desk-row, 88px) + var(--desk-icon, 50px));
+}
 .desk-widget {
-  border-radius: 22px;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.5), rgba(236, 243, 250, 0.32));
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
-  backdrop-filter: blur(18px) saturate(1.2);
+  border-radius: calc(var(--desk-icon, 50px) * 0.42);
+}
+/* 轻薄冰晶玻璃（角色、音乐） */
+.desk-glass {
+  background:
+    radial-gradient(90% 60% at 20% 0%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 70%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.42), rgba(226, 236, 247, 0.24));
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  backdrop-filter: blur(16px) saturate(1.25);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.75),
-    0 4px 16px rgba(80, 110, 155, 0.1);
+    inset 0 0.5px 0 rgba(255, 255, 255, 1),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.7),
+    0 10px 24px -14px rgba(70, 100, 145, 0.35);
+}
+/* 便签：珍珠白信纸，淡淡的横线 */
+.desk-paper {
+  background:
+    repeating-linear-gradient(180deg, transparent 0 18px, rgba(150, 175, 205, 0.16) 18px 18.5px) 0 34px / 100% calc(100% - 44px) no-repeat,
+    linear-gradient(170deg, rgba(255, 255, 255, 0.86), rgba(246, 249, 253, 0.74));
+  box-shadow:
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(70, 100, 145, 0.08),
+    0 12px 22px -14px rgba(70, 100, 145, 0.35);
 }
 .desk-serif {
   font-family: var(--font-serif-en);
@@ -578,4 +651,48 @@ body {
 .desk-note-fade {
   -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
   mask-image: linear-gradient(180deg, #000 70%, transparent);
+}
+.desk-clock-time {
+  font-size: calc(var(--desk-icon, 50px) * 1.04);
+  line-height: 0.95;
+  letter-spacing: 0.01em;
+  color: #34506f;
+  text-shadow: 0 0 18px rgba(255, 255, 255, 0.95), 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.desk-clock {
+  /* 不是卡片：只在文字后面铺一层极淡的白雾，保证换了深色壁纸也看得清 */
+  background: radial-gradient(closest-side at 32% 50%, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0));
+}
+.desk-vinyl {
+  width: calc(var(--desk-icon, 50px) + 6px);
+  height: calc(var(--desk-icon, 50px) + 6px);
+  border-radius: calc(var(--desk-icon, 50px) * 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7f98b8;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.95) 0 14%, rgba(255, 255, 255, 0) 15%),
+    repeating-radial-gradient(circle at 50% 50%, rgba(160, 185, 215, 0.18) 0 1px, rgba(255, 255, 255, 0) 1px 4px),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.8), rgba(206, 222, 240, 0.6));
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.9), 0 4px 10px -4px rgba(70, 100, 145, 0.3);
+}
+.desk-vinyl svg {
+  stroke-width: 1.3px;
+}
+.desk-tape {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  width: 38%;
+  height: 11px;
+  transform: translateX(-50%) rotate(-2deg);
+  background: linear-gradient(90deg, rgba(196, 214, 236, 0.55), rgba(226, 236, 248, 0.75), rgba(196, 214, 236, 0.55));
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.7);
+}
+.desk-avatar-ring {
+  border-radius: 999px;
+  padding: 2px;
+  background: linear-gradient(150deg, #ffffff, #c9d8ea 55%, #ffffff);
+  box-shadow: 0 4px 12px -4px rgba(70, 100, 145, 0.35);
 }

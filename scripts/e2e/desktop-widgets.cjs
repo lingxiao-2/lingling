@@ -44,7 +44,8 @@ const check = (ok, name) => {
   const now = new Date()
   const expect = `现在 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
   check(shown === expect || Math.abs(Date.now() - now) < 61000, `时间小组件显示当前时间（${shown}）`)
-  check((await page.getByText(/月\d+日 星期/).count()) === 1, '显示中文日期与星期')
+  const clockBox = page.locator('[aria-label="时间日期"]')
+  check((await clockBox.getByText(/^\d+月\d+日$/).count()) === 1 && (await clockBox.getByText(/^星期[日一二三四五六]$/).count()) === 1, '显示中文日期与星期')
   const font = await page.locator('[aria-label^="现在 "]').evaluate((e) => getComputedStyle(e).fontFamily)
   check(/Cormorant/.test(font), `时间使用英文衬线字体（${font.split(',')[0]}）`)
 
