@@ -18,7 +18,7 @@ import NoteEditorPage from './pages/notes/NoteEditorPage'
 import NotesTrashPage from './pages/notes/NotesTrashPage'
 import CalendarPage from './pages/calendar/CalendarPage'
 import EventEditorPage from './pages/calendar/EventEditorPage'
-import LifeAccessPage from './pages/LifeAccessPage'
+import AiToolsPage, { AiToolsCharacterPage } from './pages/AiToolsPage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
 import MomentComposePage from './pages/MomentComposePage'
@@ -94,7 +94,10 @@ export default function App() {
       <Route path="me/theme" element={<ThemeSettingsPage />} />
       <Route path="me/stickers" element={<StickerSettingsPage />} />
       <Route path="me/backup" element={<BackupPage />} />
-      <Route path="me/life-access" element={<LifeAccessPage />} />
+      <Route path="me/ai-tools" element={<AiToolsPage />} />
+      <Route path="me/ai-tools/:charId" element={<AiToolsCharacterPage />} />
+      {/* 第五阶段的全局开关页已由逐个角色的「AI 工具权限」取代；旧设置原样保留，不再使用 */}
+      <Route path="me/life-access" element={<Navigate to="/me/ai-tools" replace />} />
       <Route path="import" element={<ImportPage />} />
       {/* 旧入口，保留以免已有链接失效 */}
       <Route path="lorebooks" element={<Navigate to="/contacts?tab=lorebooks" replace />} />

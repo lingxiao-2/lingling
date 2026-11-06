@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import ToolConfirmCard from '../components/ToolConfirmCard'
+import { usePendingConfirmation } from '../tools/confirm'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -128,6 +130,7 @@ const WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 export default function ChatPage() {
   const { convId = '' } = useParams()
+  const pendingTool = usePendingConfirmation(convId)
   // 从搜索结果进入：定位到那条消息并短暂高亮
   const [params] = useSearchParams()
   const focusId = params.get('m')
@@ -283,8 +286,8 @@ export default function ChatPage() {
   }, [messages, scrollToBottom])
 
   useLayoutEffect(() => {
-    if (atBottom.current && (busy || reply.status === 'error')) scrollToBottom()
-  }, [reply.partial, reply.status, busy, scrollToBottom])
+    if (atBottom.current && (busy || reply.status === 'error' || pendingTool)) scrollToBottom()
+  }, [reply.partial, reply.status, busy, pendingTool, scrollToBottom])
 
   const onScroll = () => {
     const el = scrollRef.current
@@ -522,6 +525,8 @@ export default function ChatPage() {
             </div>
             )
           })()}
+
+          {pendingTool && <ToolConfirmCard req={pendingTool} />}
 
           {reply.status === 'error' && (
             <div className="mx-8 ice rounded-[16px] px-4 py-3 text-[12.5px] leading-relaxed">

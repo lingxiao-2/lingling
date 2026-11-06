@@ -65,6 +65,8 @@ export interface ToolDefinition {
   /** 结果序列化后的最大字数 */
   maxResultChars?: number
   /** 确认卡片上显示的内容（confirm 为 true 的工具必须提供） */
+  /** 「每次询问」时给你看这次要读取的范围（例如「11月7日 的日程」），不读取任何数据 */
+  describe?: (args: Record<string, unknown>) => string[]
   preview?: (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolPreview | { error: string }>
   execute: (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolResult>
 }

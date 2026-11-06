@@ -1,7 +1,7 @@
 /**
  * 生活应用整合的浏览器交互测试（本地运行，不在 CI 中）：
  *   npm run build && npx vite preview --port 4173 & node scripts/e2e/life-integration.cjs [截图目录]
- * 覆盖：四个应用从桌面打开并返回原页；包含照片的备份导出 → 清空 → 恢复后数据和照片原图完全一致；AI 权限页默认全部关闭。
+ * 覆盖：四个应用从桌面打开并返回原页；包含照片的备份导出 → 清空 → 恢复后数据和照片原图完全一致；旧权限地址转到 AI 工具权限。
  */
 const { chromium, devices } = require('playwright')
 const fs = require('fs')
@@ -80,12 +80,11 @@ const idb = (page, fn, arg) => page.evaluate(([src, a]) => new Promise((res, rej
   await page.goto(BASE + `#/album/photo/${before.id}?from=all`)
   check(await seen(page.locator('.will-change-transform')), '恢复后能打开照片原图')
 
-  // 5. AI 权限页：默认全部关闭
+  // 5. 旧的「生活应用的 AI 权限」地址转到逐个角色的「AI 工具权限」
   await page.goto(BASE + '#/me/life-access')
   await page.waitForTimeout(500)
-  const boxes = await page.locator('input[type=checkbox]').evaluateAll((els) => els.map((e) => e.checked))
-  check(boxes.length === 6 && boxes.every((x) => !x), '生活应用的 AI 权限默认全部关闭')
-  check(await seen(page.getByText(/目前还没有任何 AI 会读取或修改这些数据/)), '明确说明目前没有 AI 使用这些数据')
+  check(/#\/me\/ai-tools$/.test(page.url()), '旧权限地址转到 AI 工具权限')
+  check(await seen(page.getByText(/默认全部关闭/)), '说明默认全部关闭')
   if (shots) await page.screenshot({ path: `${shots}/life-access.png` })
   check(errors.length === 0, `没有运行时错误${errors.length ? '：' + errors.join(' | ') : ''}`)
   await browser.close()
