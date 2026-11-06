@@ -531,3 +531,33 @@ body {
     inset 0 0 0 1px rgba(255, 255, 255, 0.7),
     0 8px 28px rgba(80, 110, 155, 0.14);
 }
+.desk {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+@keyframes desk-wiggle {
+  0%, 100% { transform: rotate(-1.4deg); }
+  50% { transform: rotate(1.4deg); }
+}
+.desk-wiggle {
+  animation: desk-wiggle 0.28s ease-in-out infinite;
+}
+.desk-wiggle:nth-child(2n) {
+  animation-delay: -0.14s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .desk-wiggle { animation: none; }
+}
+.desk-target .desk-icon,
+.desk-target > div {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.9),
+    0 0 0 2px var(--c-accent);
+}
+.desk-dock-over {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.85),
+    0 0 0 2px var(--c-accent),
+    0 8px 28px rgba(80, 110, 155, 0.14);
+}

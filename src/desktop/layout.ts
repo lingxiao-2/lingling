@@ -97,3 +97,62 @@ export function normalizeLayout(raw: unknown): DesktopLayout {
   const page = typeof r.page === 'number' && Number.isInteger(r.page) ? Math.min(Math.max(r.page, 0), GRID.pages - 1) : 0
   return { version: LAYOUT_VERSION, pages, dock, page }
 }
+
+/** 桌面上的一个位置：某一页的第几个，或 Dock 的第几个 */
+export type Slot = { area: 'page'; page: number; index: number } | { area: 'dock'; index: number }
+
+function clone(l: DesktopLayout): DesktopLayout {
+  return { ...l, pages: l.pages.map((p) => [...p]), dock: [...l.dock] }
+}
+
+export function itemAt(l: DesktopLayout, s: Slot): DesktopItem | undefined {
+  if (s.area === 'dock') {
+    const id = l.dock[s.index]
+    return id ? { kind: 'app', app: id } : undefined
+  }
+  return l.pages[s.page]?.[s.index]
+}
+
+/**
+ * 移动一个图标或小组件，返回新的布局；做不到时返回 null（原布局不变）：
+ *  - 页内或跨页：从原位置取出，插入目标位置（index 超出时放到最后）；目标页放不下时不移动
+ *  - 放进 Dock：只能放应用；Dock 已满（4 个）时与目标位置的应用互换
+ *  - 从 Dock 拖到桌面：插入目标页；放不下时不移动
+ */
+export function moveItem(l: DesktopLayout, from: Slot, to: Slot): DesktopLayout | null {
+  const it = itemAt(l, from)
+  if (!it) return null
+  if (from.area === to.area && (from.area === 'dock' || (to.area === 'page' && from.page === to.page)) && from.index === to.index) return l
+  const n = clone(l)
+  if (to.area === 'dock') {
+    if (it.kind !== 'app') return null
+    if (from.area === 'dock') {
+      n.dock.splice(from.index, 1)
+      n.dock.splice(Math.min(to.index, n.dock.length), 0, it.app)
+      return n
+    }
+    n.pages[from.page].splice(from.index, 1)
+    if (n.dock.length < GRID.dock) {
+      n.dock.splice(Math.min(to.index, n.dock.length), 0, it.app)
+    } else {
+      // Dock 已满：与目标位置的应用互换
+      const i = Math.min(to.index, n.dock.length - 1)
+      const out = n.dock[i]
+      n.dock[i] = it.app
+      n.pages[from.page].splice(from.index, 0, { kind: 'app', app: out })
+    }
+    return n
+  }
+  if (from.area === 'dock') n.dock.splice(from.index, 1)
+  else n.pages[from.page].splice(from.index, 1)
+  const target = n.pages[to.page]
+  if (!target) return null
+  target.splice(Math.min(to.index, target.length), 0, it)
+  if (!fits(target)) return null
+  return n
+}
+
+export function setPage(l: DesktopLayout, page: number): DesktopLayout {
+  const p = Math.min(Math.max(Math.round(page), 0), GRID.pages - 1)
+  return p === l.page ? l : { ...l, page: p }
+}
