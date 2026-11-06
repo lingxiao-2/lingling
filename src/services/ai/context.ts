@@ -9,9 +9,9 @@ import type { Character, Lorebook, LoreEntry, Message, Sticker, StickerAnalysis,
 import { describeAnalysis } from '../vision/vision'
 import type { ChatTurn } from './provider'
 import { renderAssistantTurn, type ReplyPart } from './messageFormat'
+import { organizedSection } from './organize'
 import { formatSection, stickerFrequency, styleSection, type StickerOption } from './style'
 import { layerProfile, pickRelated } from './profile'
-import { organizedSection } from './organize'
 
 /** 一次最多向模型提供多少个表情包（控制 Token） */
 export const MAX_OFFERED_STICKERS = 24
@@ -181,8 +181,6 @@ export function buildContext(input: ContextInput): BuiltContext {
   field('背景故事', m(layered.core.backstory))
   field(`与${user}的关系`, m(layered.core.relationToUser))
   for (const e of layered.coreExtras) field(e.label, m(e.text))
-  const org = organizedSection(c.organized)
-  if (org) parts.push(m(org))
   if (related.length) {
     parts.push(`【与当前话题相关的角色资料】（节选，供参考）\n${related.map((r) => `· ${r.label}：${m(r.text)}`).join('\n')}`)
   }
@@ -194,6 +192,9 @@ export function buildContext(input: ContextInput): BuiltContext {
   if (entries.length) {
     parts.push(`【相关设定】\n${entries.map((e) => `· ${e.name}：${m(e.content)}`).join('\n')}`)
   }
+  // 资料整理结果（用户确认保存后才有）
+  const org = organizedSection(c.organized)
+  if (org) parts.push(m(org))
   if (c.exampleDialogue?.trim()) {
     parts.push(`【说话示例】（仅用于参考语气，不是你们真实发生过的对话，不要当作记忆）\n${clip(m(c.exampleDialogue), 1500)}`)
   }
