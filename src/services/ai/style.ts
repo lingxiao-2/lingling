@@ -3,7 +3,7 @@
  * 这些设置只影响「怎么说」：话量、语气、表情包频率、语言特点、亲疏。
  * 角色卡里的人设永远优先，两者冲突时以人设为准；未设置的项目不写入提示词，避免所有角色都套同一个模板。
  */
-import type { Character, ChatStyle } from '../../db/schema'
+import type { Character, ChatStyle, RelationshipStatus } from '../../db/schema'
 
 export const VERBOSITY_LABEL: Record<NonNullable<ChatStyle['verbosity']>, string> = { low: '少', medium: '适中', high: '多' }
 export const TONE_LABEL: Record<Exclude<NonNullable<ChatStyle['tone']>, ''>, string> = {
@@ -40,22 +40,25 @@ export function stickerFrequency(c: Pick<Character, 'chatStyle' | 'permissions'>
  * 亲疏：auto 时结合人设中的关系与实际聊过的轮数，给模型一个尺度而不是固定模板。
  * @param exchanges 本会话中用户发言的轮数
  */
-export function closenessHint(style: ChatStyle | undefined, exchanges: number, userName: string): string {
+export function closenessHint(style: ChatStyle | undefined, exchanges: number, userName: string, relation: RelationshipStatus = 'unknown'): string {
   const c = style?.closeness ?? 'auto'
   if (c === 'distant') return `亲疏：你们还不太熟，保持礼貌和分寸，不要过分亲昵。`
   if (c === 'friendly') return `亲疏：你们已经是熟悉的朋友，可以随意自然一些。`
   if (c === 'close') return `亲疏：你们关系亲密，说话可以更放松、更有默契。`
+  if (relation === 'lover' || relation === 'married' || relation === 'friend' || relation === 'ambiguous') {
+    return `亲疏：以上面写明的你和${userName}的关系为准。关系是早已存在的，不因为这个对话框里聊得少就变得生疏；亲近程度按你的性格自然表现。`
+  }
   const stage = exchanges < 6 ? '刚开始聊，还在互相了解' : exchanges < 60 ? '已经聊过一些，彼此有了一定了解' : '已经聊了很久，相当熟悉'
   return `亲疏：以角色设定里与${userName}的关系为准；从实际聊天看，你们${stage}，语气的亲近程度要与此相符，不要突然过分亲昵。`
 }
 
-export function styleSection(c: Pick<Character, 'chatStyle' | 'permissions'>, exchanges: number, userName: string): string {
+export function styleSection(c: Pick<Character, 'chatStyle' | 'permissions'>, exchanges: number, userName: string, relation: RelationshipStatus = 'unknown'): string {
   const s = c.chatStyle ?? {}
   const lines: string[] = []
   if (s.verbosity && VERBOSITY[s.verbosity]) lines.push(VERBOSITY[s.verbosity])
   if (s.tone) lines.push(TONE[s.tone])
   if (s.quirks?.trim()) lines.push(`语言特点：${s.quirks.trim().slice(0, 300)}`)
-  lines.push(closenessHint(s, exchanges, userName))
+  lines.push(closenessHint(s, exchanges, userName, relation))
   return `【表达偏好】（只影响说话方式；与上面的人设冲突时，以人设为准）\n${lines.map((l) => `· ${l}`).join('\n')}`
 }
 

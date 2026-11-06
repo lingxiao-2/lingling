@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import NavBar, { NavButton } from '../components/NavBar'
 import Avatar from '../components/Avatar'
+import RelationshipCard from '../components/RelationshipCard'
 import { ConfirmDialog } from '../components/Sheet'
 import PickerSheet from '../components/PickerSheet'
 import { PrimaryButton, Section } from '../components/ui'
@@ -84,6 +85,8 @@ export default function CharacterProfilePage() {
             <span className="h-px w-4 bg-[var(--c-brand-soft)]" />
           </button>
         </div>
+
+        <RelationshipCard c={c} />
 
         <Section title="设定">
           <Block label="与你的关系" text={c.relationToUser} />
