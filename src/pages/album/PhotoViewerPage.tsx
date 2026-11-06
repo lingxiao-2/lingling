@@ -96,6 +96,8 @@ export default function PhotoViewerPage() {
   const { id = '' } = useParams()
   const [params] = useSearchParams()
   const from = params.get('from') ?? 'all'
+  // 从日记等其他应用打开时，关闭后回到原来的页面
+  const ret = params.get('return') === '1'
   const nav = useNavigate()
   const photo = useLiveQuery(() => db.photos.get(id).then((p) => p ?? null), [id])
   const list = usePhotoList(from)
@@ -130,9 +132,9 @@ export default function PhotoViewerPage() {
   const idx = list?.findIndex((p) => p.id === id) ?? -1
   const go = (dir: -1 | 1) => {
     const next = list?.[idx + dir]
-    if (next) nav(`/album/photo/${next.id}?from=${from}`, { replace: true })
+    if (next) nav(`/album/photo/${next.id}?from=${from}${ret ? '&return=1' : ''}`, { replace: true })
   }
-  const close = () => nav(`/album/${from}`, { replace: true })
+  const close = () => (ret ? nav(-1) : nav(`/album/${from}`, { replace: true }))
 
   if (photo === null) {
     return (

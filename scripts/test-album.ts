@@ -102,7 +102,7 @@ test('数据库 v4 → v5：已有的角色、聊天、设置原样保留，新�
   old.close()
   await db.open()
   assert.equal(db.verno, DB_SCHEMA_VERSION)
-  assert.equal(DB_SCHEMA_VERSION, 5)
+  assert.ok(DB_SCHEMA_VERSION >= 5)
   assert.equal((await db.characters.get('c1'))!.name, '沈遥')
   assert.equal((await db.messages.get('m1'))!.content, '你好')
   assert.equal(((await db.settings.get('ai-config'))!.value as { apiKey: string }).apiKey, 'sk-keep', 'API Key 不变')

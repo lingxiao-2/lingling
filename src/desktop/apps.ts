@@ -52,7 +52,7 @@ export const APPS: Record<AppId, DesktopApp> = {
   backup: { id: 'backup', name: '备份', en: 'Backup', icon: 'backup', route: '/me/backup' },
   ai: { id: 'ai', name: 'AI 服务', en: 'AI', icon: 'key', route: '/me/api' },
   album: { id: 'album', name: '相册', en: 'Album', icon: 'album', route: '/album' },
-  diary: { id: 'diary', name: '日记', en: 'Diary', icon: 'diary', route: null, plan: '写日记，并可以选择让角色看到。' },
+  diary: { id: 'diary', name: '日记', en: 'Diary', icon: 'diary', route: '/diary' },
   notes: { id: 'notes', name: '便签', en: 'Notes', icon: 'note', route: null, plan: '完整的便签应用；桌面便签小组件会先上线。' },
   calendar: { id: 'calendar', name: '日历', en: 'Calendar', icon: 'calendar', route: null, plan: '纪念日、约定和提醒。' },
   music: { id: 'music', name: '音乐', en: 'Music', icon: 'music', route: null, plan: '播放你自己导入的音乐。' },
