@@ -13,6 +13,8 @@ import { storageEstimate } from '../services/stickerImport'
 import { analysesFor, analyzeMany, loadVisionConfig, loadVisionUsage, saveVisionConfig } from '../services/vision/stickerVision'
 import { DEFAULT_VISION_CONFIG, describeAnalysis, requestAnalysis, visionTarget, type VisionConfig } from '../services/vision/vision'
 import { useAIConfig } from '../store/profile'
+import { checkProxyUrl, loadLinkProxy, saveLinkProxy } from '../services/linkProxy'
+import { browserProbe, fetchLink, LinkError } from '../services/linkImport'
 
 const PRESETS = [
   { label: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
@@ -64,7 +66,38 @@ export default function StickerSettingsPage() {
   const [storage, setStorage] = useState<{ usage: number; quota: number } | null>(null)
   const imageBytes = useLiveQuery(async () => (await db.stickers.toArray()).reduce((s, x) => s + (x.bytes || 0), 0), [], 0)
 
+  const [proxyUrl, setProxyUrl] = useState('')
+  const [proxyToken, setProxyToken] = useState('')
+  const [proxyMsg, setProxyMsg] = useState<{ ok: boolean; msg: string; steps?: string[] } | null>(null)
+  const [proxyTestUrl, setProxyTestUrl] = useState('')
+  const [proxyBusy, setProxyBusy] = useState(false)
+
+  const saveProxy = async () => {
+    const bad = proxyUrl.trim() ? checkProxyUrl(proxyUrl) : null
+    if (bad) return setProxyMsg({ ok: false, msg: bad })
+    await saveLinkProxy(proxyUrl.trim() ? { url: proxyUrl, token: proxyToken } : null)
+    setProxyMsg({ ok: true, msg: proxyUrl.trim() ? '已保存。之后通过链接导入时，浏览器读不到的公开图片会改由你的代理下载。' : '已清除代理，只使用浏览器直连。' })
+  }
+  const testLink = async () => {
+    setProxyBusy(true)
+    setProxyMsg(null)
+    try {
+      const f = await fetchLink(proxyTestUrl, fetch, undefined, { proxy: await loadLinkProxy(), probe: (u) => browserProbe(u) })
+      setProxyMsg({ ok: true, msg: `读取成功：${f.kind === 'image' ? '图片' : f.kind === 'zip' ? 'ZIP' : '网页'}，${(f.bytes.length / 1024).toFixed(0)} KB` })
+    } catch (e) {
+      setProxyMsg({ ok: false, msg: e instanceof Error ? e.message : String(e), steps: e instanceof LinkError ? e.steps : undefined })
+    } finally {
+      setProxyBusy(false)
+    }
+  }
+
   useEffect(() => {
+    void loadLinkProxy().then((p) => {
+      if (p) {
+        setProxyUrl(p.url)
+        setProxyToken(p.token)
+      }
+    })
     void loadVisionConfig().then((c) => {
       if (!loaded.current) {
         loaded.current = true
@@ -207,6 +240,35 @@ export default function StickerSettingsPage() {
           <p className="mt-2 text-[11.5px] text-[var(--c-text-3)]">
             不批量识别也可以：你发出的表情包会在发送时自动识别；同一张图只识别一次，结果保存在本机。
           </p>
+        </Card>
+
+        <Card title="链接导入代理（可选）">
+          <p>
+            很多图床允许显示图片，但不允许其他网页读取图片内容（跨域限制），这时「通过链接导入」会失败。可以填写<b>你自己部署</b>的图片代理来下载这类公开图片。部署方法见仓库 docs/link-import.md；不填写时只用浏览器直连。
+          </p>
+          <input value={proxyUrl} onChange={(e) => setProxyUrl(e.target.value)} placeholder="代理地址，例如 https://xxx.workers.dev" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} className={`${field} mt-2.5`} />
+          <input value={proxyToken} onChange={(e) => setProxyToken(e.target.value)} placeholder="访问口令（部署时自己设定的 ACCESS_TOKEN）" type="password" autoCapitalize="off" autoCorrect="off" spellCheck={false} className={`${field} mt-2`} />
+          <button onClick={() => void saveProxy()} className="press mt-2.5 h-8 px-3.5 rounded-full border border-[var(--c-line)] bg-white/45 text-[12.5px] text-[var(--c-accent-strong)]">
+            保存
+          </button>
+          <div className="mt-3 text-[12px]">测试一个链接（会显示每一步的诊断结果）：</div>
+          <div className="mt-1.5 flex gap-2">
+            <input value={proxyTestUrl} onChange={(e) => setProxyTestUrl(e.target.value)} placeholder="https://" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} className={`${field} flex-1 min-w-0`} />
+            <button onClick={() => void testLink()} disabled={!proxyTestUrl.trim() || proxyBusy} className="press shrink-0 px-3 rounded-[12px] border border-[var(--c-line)] bg-white/45 text-[12.5px] text-[var(--c-accent-strong)] disabled:opacity-45">
+              {proxyBusy ? '测试中…' : '测试'}
+            </button>
+          </div>
+          {proxyMsg && (
+            <div className={`mt-2 text-[12px] leading-relaxed ${proxyMsg.ok ? 'text-[var(--c-accent-strong)]' : 'text-[var(--c-danger)]'}`}>
+              {proxyMsg.msg}
+              {proxyMsg.steps?.length ? (
+                <ul className="mt-1 list-disc pl-4 text-[11.5px] text-[var(--c-text-3)]">
+                  {proxyMsg.steps.map((x, i) => <li key={i}>{x}</li>)}
+                </ul>
+              ) : null}
+            </div>
+          )}
+          <p className="mt-2 text-[11px] text-[var(--c-text-3)]">口令只保存在这台设备的浏览器里。代理只下载公开的 https 图片 / ZIP，不会绕过登录、验证码或防盗链。</p>
         </Card>
 
         <Card title="用量">

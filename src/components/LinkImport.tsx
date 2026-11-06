@@ -4,7 +4,8 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { checkLink, extractCandidates, fetchLink, LinkError, type PageCandidate } from '../services/linkImport'
+import { browserProbe, checkLink, extractCandidates, fetchLink, LinkError, shareHint, type LinkProxy, type PageCandidate } from '../services/linkImport'
+import { loadLinkProxy } from '../services/linkProxy'
 import { expandInputs, importStickers, type StickerImportResult, type StickerInput } from '../services/stickerImport'
 import { prepareStickerBytes } from '../services/stickers'
 import { addSticker, existingStickerHashes } from '../db/stickerRepo'
@@ -36,6 +37,10 @@ export default function LinkImport({ onClose, onDone }: { onClose: () => void; o
   const [items, setItems] = useState<Item[]>([])
   const [pack, setPack] = useState('mine')
   const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [steps, setSteps] = useState<string[]>([])
+  const [proxy, setProxy] = useState<LinkProxy | null>(null)
+  useEffect(() => void loadLinkProxy().then(setProxy), [])
+  const opts = { proxy, probe: (u: string) => browserProbe(u) }
 
   // 释放本地预览图
   useEffect(() => () => items.forEach((i) => i.preview.startsWith('blob:') && URL.revokeObjectURL(i.preview)), [items])
@@ -52,6 +57,7 @@ export default function LinkImport({ onClose, onDone }: { onClose: () => void; o
   const recognize = async () => {
     setError('')
     setNote('')
+    setSteps([])
     let u: URL
     try {
       u = checkLink(url)
@@ -60,7 +66,7 @@ export default function LinkImport({ onClose, onDone }: { onClose: () => void; o
     }
     setPhase('loading')
     try {
-      const f = await fetchLink(u.href)
+      const f = await fetchLink(u.href, fetch, undefined, opts)
       if (f.kind === 'image') {
         const name = stemOf(f.finalUrl)
         setPack('mine')
@@ -76,7 +82,7 @@ export default function LinkImport({ onClose, onDone }: { onClose: () => void; o
         const html = new TextDecoder().decode(f.bytes)
         const found = extractCandidates(html, f.finalUrl)
         if (!found.length) {
-          throw new LinkError('没有在这个网页的主要内容里找到可导入的图片。页面可能需要登录、由脚本动态加载图片，或者图片不在正文区域', 'empty')
+          throw new LinkError(shareHint(new URL(f.finalUrl).hostname) ?? shareHint(u.hostname) ?? '没有在这个网页的主要内容里找到可导入的图片。页面可能需要登录、由脚本动态加载图片，或者图片不在正文区域', 'empty')
         }
         setPack(new URL(f.finalUrl).hostname)
         setNote('已过滤头像、图标、广告等无关图片。网页里的图片是否能导入，取决于对方网站是否允许跨域读取。')
@@ -85,6 +91,7 @@ export default function LinkImport({ onClose, onDone }: { onClose: () => void; o
       setPhase('preview')
     } catch (e) {
       setError(e instanceof Error ? e.message : '识别失败')
+      setSteps(e instanceof LinkError ? e.steps : [])
       setPhase('input')
     }
   }
@@ -102,7 +109,7 @@ export default function LinkImport({ onClose, onDone }: { onClose: () => void; o
       if (it.input) inputs.push(it.input)
       else if (it.remote) {
         try {
-          const f = await fetchLink(it.remote.url)
+          const f = await fetchLink(it.remote.url, fetch, undefined, opts)
           if (f.kind === 'html') throw new LinkError('链接指向的是网页，不是图片', 'unsupported')
           inputs.push({ name: stemOf(it.remote.url) + (f.kind === 'zip' ? '.zip' : ''), bytes: f.bytes, packId: f.kind === 'zip' ? undefined : pack })
         } catch (e) {
@@ -151,6 +158,11 @@ export default function LinkImport({ onClose, onDone }: { onClose: () => void; o
               </button>
             </div>
             {error && <p className="mt-2 text-[12.5px] leading-relaxed text-[var(--c-danger)]">{error}</p>}
+            {error && steps.length > 0 && (
+              <ul className="mt-1 list-disc pl-4 text-[11px] leading-relaxed text-[var(--c-text-3)]">
+                {steps.map((x, i) => <li key={i}>{x}</li>)}
+              </ul>
+            )}
             <button
               onClick={() => void recognize()}
               disabled={!url.trim() || phase === 'loading'}
@@ -159,7 +171,7 @@ export default function LinkImport({ onClose, onDone }: { onClose: () => void; o
               {phase === 'loading' ? '正在识别…' : '识别'}
             </button>
             <p className="mt-2.5 text-[11px] leading-relaxed text-[var(--c-text-3)]">
-              聆聆在你的浏览器里直接读取链接，不经过任何第三方服务器。需要登录、有权限限制或不允许跨域读取的网站无法导入，会提示原因。请只导入你有权使用的图片。
+              聆聆先在你的浏览器里直接读取链接；{proxy ? '读不到时改用你自己部署的图片代理。' : '不经过任何第三方服务器；不允许跨域读取的网站需要配置图片代理。'}需要登录或有权限限制的内容无法导入，会提示原因。请只导入你有权使用的图片。
             </p>
           </>
         )}

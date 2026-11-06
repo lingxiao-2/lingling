@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { checkLink, extractCandidates, fetchLink, isPrivateHost, LINK_LIMITS } from '../src/services/linkImport'
+import { checkLink, extractCandidates, fetchLink, fetchViaProxy, isPrivateHost, LINK_LIMITS, LinkError, shareHint } from '../src/services/linkImport'
 
 test('链接校验：只允许公开的 http/https，拒绝内网、本机、元数据地址和带密码的链接', () => {
   assert.equal(checkLink(' https://example.com/a.gif ').href, 'https://example.com/a.gif')
@@ -32,8 +32,8 @@ test('下载：按文件内容识别图片 / ZIP / 网页（不信任扩展名�
 })
 
 test('下载失败：给出具体原因，不假装成功', async () => {
-  await assert.rejects(fetchLink('https://x.com/a', (async () => { throw new TypeError('Failed to fetch') }) as unknown as typeof fetch), (e: { kind: string; message: string }) => e.kind === 'cors' && /跨域/.test(e.message))
-  await assert.rejects(fetchLink('https://x.com/a', respond('', { status: 403 })), /需要登录或没有访问权限/)
+  await assert.rejects(fetchLink('https://x.com/a', (async () => { throw new TypeError('Failed to fetch') }) as unknown as typeof fetch), (e: { kind: string; message: string }) => e.kind === 'network' && /跨域/.test(e.message))
+  await assert.rejects(fetchLink('https://x.com/a', respond('', { status: 403 })), /需要登录、有权限限制或开启了防盗链/)
   await assert.rejects(fetchLink('https://x.com/a', respond('', { status: 404 })), /不存在/)
   await assert.rejects(fetchLink('https://x.com/a', respond('', { status: 429 })), /访问频率/)
   await assert.rejects(fetchLink('https://x.com/a', respond('', { status: 200 })), /空/)
@@ -78,4 +78,65 @@ test('网页提取：只取正文中的图片与 ZIP，过滤头像、图标、�
     ],
   )
   assert.equal(c[0].alt, '开心')
+})
+
+const corsBlocked = (async () => {
+  throw new TypeError('Load failed')
+}) as unknown as typeof fetch
+
+test('直连被浏览器拦截：图片能显示 → 明确提示跨域（CORS），并给出每一步诊断', async () => {
+  const err = await fetchLink('https://i.imgant.com/v2/itpBKTZ.jpeg', corsBlocked, undefined, { probe: async () => true, pageProtocol: 'https:' }).catch((e) => e)
+  assert.ok(err instanceof LinkError)
+  assert.equal(err.kind, 'cors')
+  assert.match(err.message, /跨域/)
+  assert.ok(err.steps.some((s: string) => /可以显示/.test(s)))
+  assert.ok(err.steps.some((s: string) => /未配置/.test(s)))
+})
+
+test('直连被拦截且图片也打不开 → 不说成跨域；分享页 / 短链接给出专门原因', async () => {
+  const a = await fetchLink('https://cdn.example.com/x.jpg', corsBlocked, undefined, { probe: async () => false }).catch((e) => e)
+  assert.equal(a.kind, 'network')
+  const b = await fetchLink('https://b23.tv/abc', corsBlocked, undefined, { probe: async () => false }).catch((e) => e)
+  assert.match(b.message, /分享页|短链接/)
+  assert.match(shareHint('pan.baidu.com') ?? '', /网盘/)
+  assert.equal(shareHint('i.imgant.com'), null)
+})
+
+test('http 链接在 https 页面中先改试 https；源站真实返回 403 时不再走代理绕过', async () => {
+  const seen: string[] = []
+  const f = await fetchLink('http://x.com/a.gif', (async (u: string) => {
+    seen.push(u)
+    return new Response(gif as BodyInit)
+  }) as unknown as typeof fetch, undefined, { pageProtocol: 'https:' })
+  assert.equal(f.kind, 'image')
+  assert.deepEqual(seen, ['https://x.com/a.gif'])
+  let proxied = false
+  const e = await fetchLink('https://x.com/a.gif', (async (u: string) => {
+    if (u.includes('/fetch?')) proxied = true
+    return new Response('no', { status: 403 })
+  }) as unknown as typeof fetch, undefined, { proxy: { url: 'https://p.example.dev', token: 't' } }).catch((x) => x)
+  assert.equal(e.kind, 'auth')
+  assert.equal(proxied, false)
+})
+
+test('配置了代理：直连跨域失败后改走代理，带口令，识别图片；代理的错误码转成具体原因', async () => {
+  const calls: { url: string; token?: string }[] = []
+  const impl = (async (u: string, init?: RequestInit) => {
+    calls.push({ url: u, token: (init?.headers as Record<string, string> | undefined)?.['x-lingling-token'] })
+    if (!u.startsWith('https://p.example.dev/')) throw new TypeError('Load failed')
+    const r = new Response(gif as BodyInit, { headers: { 'content-type': 'image/gif', 'x-final-url': 'https://i.imgant.com/v2/itpBKTZ.jpeg' } })
+    return r
+  }) as unknown as typeof fetch
+  const f = await fetchLink('https://i.imgant.com/v2/itpBKTZ.jpeg', impl, undefined, { proxy: { url: 'https://p.example.dev/', token: 'secret' }, probe: async () => true })
+  assert.equal(f.kind, 'image')
+  assert.equal(calls[1].url, 'https://p.example.dev/fetch?html=1&url=' + encodeURIComponent('https://i.imgant.com/v2/itpBKTZ.jpeg'))
+  assert.equal(calls[1].token, 'secret')
+
+  const denied = (async (u: string) => {
+    if (!u.includes('/fetch?')) throw new TypeError('Load failed')
+    return new Response(JSON.stringify({ error: { code: 'upstream_auth', status: 403 } }), { status: 502 })
+  }) as unknown as typeof fetch
+  const e = await fetchViaProxy('https://x.com/a.jpg', { url: 'https://p.example.dev', token: 't' }, denied).catch((x) => x)
+  assert.equal(e.kind, 'auth')
+  assert.match(e.message, /403/)
 })
