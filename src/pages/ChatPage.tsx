@@ -506,6 +506,8 @@ export default function ChatPage() {
               <div className="bubble bubble-them whitespace-pre-wrap break-words" aria-live="polite">
                 {reply.phase === 'vision' ? (
                   <span className="text-[12px] text-[#6f7f9c]">正在看你发的表情包…</span>
+                ) : reply.phase === 'tool' ? (
+                  <span className="text-[12px] text-[#6f7f9c]">正在{reply.toolLabel ?? '使用工具'}…</span>
                 ) : reply.partial.length >= 40 ? (
                   reply.partial
                 ) : (

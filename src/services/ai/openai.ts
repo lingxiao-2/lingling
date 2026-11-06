@@ -7,7 +7,7 @@
  * 不在代码中写死任何地址或密钥；所有配置来自用户设置。
  */
 import type { AIConfig } from '../../db/schema'
-import type { ChatTurn } from './provider'
+import type { ChatTurn, ToolCall } from './provider'
 import { CLIENT_ID, getServiceUrl, serviceAvailable } from './serviceConfig'
 
 export class AIError extends Error {
@@ -119,12 +119,22 @@ export function networkError(e: unknown, c: AIConfig): AIError {
   )
 }
 
+/** 流式响应中一段工具调用的增量（OpenAI 兼容：按 index 拼接，arguments 分多段到达） */
+export interface ToolCallDelta {
+  index: number
+  id?: string
+  name?: string
+  arguments?: string
+}
+
 /**
- * 解析 SSE 文本块，返回其中的增量文字与是否结束。
+ * 解析 SSE 文本块，返回其中的增量文字、工具调用增量与是否结束。
  * 兼容 `data: {...}`、`data:{...}`、注释行、`[DONE]`。
  */
-export function parseSSE(buffer: string): { deltas: string[]; rest: string; done: boolean } {
+export function parseSSE(buffer: string): { deltas: string[]; rest: string; done: boolean; toolDeltas: ToolCallDelta[]; finish?: string } {
   const deltas: string[] = []
+  const toolDeltas: ToolCallDelta[] = []
+  let finish: string | undefined
   let done = false
   const lines = buffer.split(/\r?\n/)
   const rest = lines.pop() ?? ''
@@ -137,16 +147,48 @@ export function parseSSE(buffer: string): { deltas: string[]; rest: string; done
       continue
     }
     try {
-      const j = JSON.parse(data) as { choices?: { delta?: { content?: string }; message?: { content?: string } }[]; error?: { message?: string } }
+      type TC = { index?: number; id?: string; function?: { name?: string; arguments?: string } }
+      const j = JSON.parse(data) as {
+        choices?: { delta?: { content?: string | null; tool_calls?: TC[] }; message?: { content?: string | null; tool_calls?: TC[] }; finish_reason?: string | null }[]
+        error?: { message?: string }
+      }
       if (j.error) throw new AIError(j.error.message ?? '服务返回错误', 'server')
-      const piece = j.choices?.[0]?.delta?.content ?? j.choices?.[0]?.message?.content
+      const c = j.choices?.[0]
+      const piece = c?.delta?.content ?? c?.message?.content
       if (piece) deltas.push(piece)
+      const tcs = c?.delta?.tool_calls ?? c?.message?.tool_calls
+      if (Array.isArray(tcs)) {
+        tcs.forEach((t, i) => toolDeltas.push({ index: typeof t.index === 'number' ? t.index : i, id: t.id, name: t.function?.name, arguments: t.function?.arguments }))
+      }
+      if (c?.finish_reason) finish = c.finish_reason
     } catch (e) {
       if (e instanceof AIError) throw e
       /* 不完整或非 JSON 的行忽略 */
     }
   }
-  return { deltas, rest, done }
+  return { deltas, rest, done, toolDeltas, finish }
+}
+
+/** 把工具调用增量拼成完整的调用（缺少名称的丢弃；缺少 id 的补一个，保证每个结果都能对应回去） */
+export function assembleToolCalls(deltas: ToolCallDelta[]): ToolCall[] {
+  const by = new Map<number, { id: string; name: string; args: string }>()
+  for (const d of deltas) {
+    const cur = by.get(d.index) ?? { id: '', name: '', args: '' }
+    if (d.id) cur.id = d.id
+    if (d.name) cur.name += d.name
+    if (d.arguments) cur.args += d.arguments
+    by.set(d.index, cur)
+  }
+  return [...by.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .filter(([, v]) => v.name)
+    .map(([i, v]) => ({ id: v.id || `call_${i}`, type: 'function' as const, function: { name: v.name, arguments: v.args } }))
+}
+
+/** OpenAI 兼容的工具定义（发给模型的 tools 参数） */
+export interface ToolSpecForModel {
+  type: 'function'
+  function: { name: string; description: string; parameters: Record<string, unknown> }
 }
 
 export interface StreamOptions {
@@ -159,11 +201,30 @@ export interface StreamOptions {
   deviceId?: string
 }
 
-/** 流式生成一次回复，返回完整文本。服务不支持流式时自动按普通响应处理。 */
-export async function streamChat({ config, messages, signal, onDelta, fetchImpl = fetch, deviceId = '' }: StreamOptions): Promise<string> {
+export interface TurnOptions extends StreamOptions {
+  /** 本轮允许模型调用的工具；为空时不发送 tools 参数（请求与以前完全一样） */
+  tools?: ToolSpecForModel[]
+}
+
+export interface TurnResult {
+  content: string
+  toolCalls: ToolCall[]
+  finishReason?: string
+}
+
+/** 名称只允许字母数字与 _ -（OpenAI 兼容服务对函数名的要求）；内部名称里的点在发送时替换 */
+export const wireName = (name: string) => name.replace(/\./g, '__')
+export const fromWireName = (name: string) => name.replace(/__/g, '.')
+
+/**
+ * 一轮模型调用（流式，服务不支持流式时自动按普通响应处理）：返回文字与模型提出的工具调用。
+ * 这里只负责协议，不执行任何工具。
+ */
+export async function chatTurn({ config, messages, signal, onDelta, fetchImpl = fetch, deviceId = '', tools }: TurnOptions): Promise<TurnResult> {
   const problem = configProblem(config)
   if (problem) throw new AIError(problem, config.service === 'lingling' ? 'unavailable' : 'config')
   const { url, headers, params } = resolveTarget(config, deviceId)
+  const extra = tools?.length ? { tools, tool_choice: 'auto' } : {}
   let res: Response
   try {
     res = await fetchImpl(url, {
@@ -171,7 +232,7 @@ export async function streamChat({ config, messages, signal, onDelta, fetchImpl 
       headers,
       signal,
       // 注意：不要在任何日志中输出请求头或请求体（其中可能含有用户的 API Key）
-      body: JSON.stringify({ ...params, messages, stream: true }),
+      body: JSON.stringify({ ...params, messages, stream: true, ...extra }),
     })
   } catch (e) {
     throw networkError(e, config)
@@ -180,10 +241,14 @@ export async function streamChat({ config, messages, signal, onDelta, fetchImpl 
 
   const type = res.headers.get('content-type') ?? ''
   let full = ''
+  const toolDeltas: ToolCallDelta[] = []
+  let finishReason: string | undefined
   try {
     if (!res.body || !type.includes('text/event-stream')) {
-      const j = (await res.json()) as { choices?: { message?: { content?: string } }[] }
-      full = j.choices?.[0]?.message?.content ?? ''
+      const r = parseSSE(`data: ${JSON.stringify(await res.json())}\n`)
+      full = r.deltas.join('')
+      toolDeltas.push(...r.toolDeltas)
+      finishReason = r.finish
       onDelta?.(full)
     } else {
       const reader = res.body.getReader()
@@ -195,6 +260,8 @@ export async function streamChat({ config, messages, signal, onDelta, fetchImpl 
         buf += dec.decode(value, { stream: true })
         const r = parseSSE(buf)
         buf = r.rest
+        toolDeltas.push(...r.toolDeltas)
+        if (r.finish) finishReason = r.finish
         if (r.deltas.length) {
           full += r.deltas.join('')
           onDelta?.(full)
@@ -204,20 +271,28 @@ export async function streamChat({ config, messages, signal, onDelta, fetchImpl 
       if (buf.trim()) {
         const r = parseSSE(`${buf}\n`)
         full += r.deltas.join('')
+        toolDeltas.push(...r.toolDeltas)
+        if (r.finish) finishReason = r.finish
       }
     }
   } catch (e) {
     if (e instanceof AIError) throw e
     if ((e as { name?: string })?.name === 'AbortError') {
-      // 已经生成的部分保留给调用方决定是否使用
+      // 已经生成的部分保留给调用方决定是否使用；未完成的工具调用一律丢弃，不会执行
       const err = new AIError('已停止生成', 'aborted')
       ;(err as AIError & { partial?: string }).partial = full
       throw err
     }
     throw networkError(e, config)
   }
-  if (!full.trim()) throw new AIError('模型返回了空内容，请重试或更换模型', 'empty')
-  return full
+  const toolCalls = tools?.length ? assembleToolCalls(toolDeltas).map((c) => ({ ...c, function: { ...c.function, name: fromWireName(c.function.name) } })) : []
+  if (!full.trim() && !toolCalls.length) throw new AIError('模型返回了空内容，请重试或更换模型', 'empty')
+  return { content: full, toolCalls, finishReason }
+}
+
+/** 流式生成一次回复，返回完整文本（不带工具）。 */
+export async function streamChat(opts: StreamOptions): Promise<string> {
+  return (await chatTurn(opts)).content
 }
 
 /** 连接测试：发一条极短的请求，验证地址、密钥 / 口令、模型与 CORS */

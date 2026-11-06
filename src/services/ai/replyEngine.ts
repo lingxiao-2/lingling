@@ -16,7 +16,10 @@ import { buildContext } from './context'
 import { loadContextSources, loadMemories } from './contextInput'
 import { maybeAutoExtract, saveRememberRequests } from './autoMemory'
 import { capParts, MAX_PARTS, parseReply, type ReplyPart } from './messageFormat'
-import { AIError, streamChat } from './openai'
+import { AIError, chatTurn } from './openai'
+import { runToolLoop, TOOL_RULES } from '../../tools/loop'
+import { authorizeTool, toolsForCharacter } from '../../tools/runtime'
+import { toolRegistry } from '../../tools/registry'
 import type { ChatTurn, ContentPart } from './provider'
 import { analysesFor, analyzeSticker, visionStatus } from '../vision/stickerVision'
 import { getStickerImage } from '../../db/stickerRepo'
@@ -34,8 +37,10 @@ export interface ReplyState {
   errorKind?: AIError['kind']
   /** 正在重新生成的版本家族 */
   regenerating?: string
-  /** vision：正在看用户发来的表情包 */
-  phase?: 'vision'
+  /** vision：正在看用户发来的表情包；tool：正在使用工具 */
+  phase?: 'vision' | 'tool'
+  /** 正在使用的工具（例如「查看你的日程」） */
+  toolLabel?: string
   /** 识图没有成功时的说明（不影响回复，回复会按「没看懂图片」处理） */
   visionNote?: string
 }
@@ -248,21 +253,41 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
     save = (part, index) => savePart({ convId, runId, index, part, characterId: character.id, model: config.model, family: regenerateFamily, stickerName: stickerNames.get(part.type === 'sticker' ? part.stickerId : '') })
 
     const parse = (final: boolean) => parseReply(raw, ctx.stickerMap, final, character.name)
+    const deviceId = config.service === 'lingling' ? await getDeviceId() : ''
+    // 文字跨轮累积：模型在调用工具前说的话也会照常发出
+    let prefix = ''
+    const onDelta = (full: string) => {
+      raw = prefix + full
+      const p = parse(false)
+      ready = p.parts
+      current = p.current
+      publish()
+      if (ready.length > delivered) void deliver()
+    }
+    const tools = await toolsForCharacter(character.id, config)
     try {
-      raw = await streamChat({
-        config,
-        messages: ctx.messages,
-        signal: ctrl.signal,
-        deviceId: config.service === 'lingling' ? await getDeviceId() : '',
-        onDelta: (full) => {
-          raw = full
-          const p = parse(false)
-          ready = p.parts
-          current = p.current
-          publish()
-          if (ready.length > delivered) void deliver()
-        },
-      })
+      if (!tools.length) {
+        // 没有可用工具：请求与以前完全一样（不发送 tools 参数）
+        raw = (await chatTurn({ config, messages: ctx.messages, signal: ctrl.signal, deviceId, onDelta })).content
+      } else {
+        const messages = [...ctx.messages]
+        messages.splice(1, 0, { role: 'system', content: TOOL_RULES })
+        await runToolLoop({
+          messages,
+          tools,
+          env: { registry: toolRegistry, ctx: { characterId: character.id, characterName: character.name, conversationId: convId, signal: ctrl.signal }, authorize: authorizeTool },
+          turn: async (msgs, specs) => {
+            const r = await chatTurn({ config, messages: msgs, signal: ctrl.signal, deviceId, onDelta, tools: specs })
+            raw = prefix + r.content
+            if (r.toolCalls.length && specs) prefix = raw.trim() ? `${raw}\n` : ''
+            return r
+          },
+          onTool: (ev) =>
+            set(convId, ev.phase === 'start'
+              ? { status: 'generating', partial: current, delivered, regenerating: regenerateFamily, phase: 'tool', toolLabel: ev.label }
+              : { status: 'generating', partial: current, delivered, regenerating: regenerateFamily }),
+        })
+      }
     } catch (e) {
       if (e instanceof AIError && e.kind === 'aborted') {
         // 手动停止：已写完的消息和正在写的那一条都保留，立即发出
