@@ -5,7 +5,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { addSticker, existingStickerHashes } from '../db/stickerRepo'
-import { fetchBatch, parseBatchText, type BatchItem } from '../services/batchText'
+import { fetchBatch, fetchItem, parseBatchText, type BatchDeps, type BatchItem } from '../services/batchText'
+import { expandInputs } from '../services/stickerImport'
 import { browserProbe, fetchLink, type LinkProxy } from '../services/linkImport'
 import { loadLinkProxy } from '../services/linkProxy'
 import { prepareStickerBytes } from '../services/stickers'
@@ -32,26 +33,39 @@ export default function BatchTextImport({ onClose, onDone }: { onClose: () => vo
   useEffect(() => void loadLinkProxy().then(setProxy), [])
   useEffect(() => () => abort.current?.abort(), [])
 
+  const seen = useRef<Set<string>>(new Set())
+  const depsFor = (signal: AbortSignal): BatchDeps => ({
+    // 每个链接都真实下载；直连读不到时用 <img> 判断是否为跨域，配置了代理则走代理
+    fetch: (url, sig) => fetchLink(url, fetch, sig, { proxy, probe: (u) => browserProbe(u, 6000) }),
+    prepare: prepareStickerBytes,
+    unzip: async (bytes) => (await expandInputs([{ name: 'pack.zip', bytes }])).items.map((i) => i.bytes),
+    existingHashes: seen.current,
+    concurrency: 3,
+    signal,
+    onUpdate: (it) => setItems((xs) => xs.map((x) => (x.line === it.line ? it : x))),
+  })
+
   const parse = async () => {
     const lines = parseBatchText(text)
     if (!lines.length) return
     const ctrl = new AbortController()
     abort.current = ctrl
+    seen.current = await existingStickerHashes()
     setItems(lines.map((l) => ({ ...l, status: l.error ? 'failed' : 'pending', reason: l.error })))
     setSelected(new Set())
     setPhase('checking')
-    const done = await fetchBatch(lines, {
-      // 每个链接都真实下载；直连读不到时用 <img> 判断是否为跨域，配置了代理则走代理
-      fetch: (url, signal) => fetchLink(url, fetch, signal, { proxy, probe: (u) => browserProbe(u, 6000) }),
-      prepare: prepareStickerBytes,
-      existingHashes: await existingStickerHashes(),
-      concurrency: 3,
-      signal: ctrl.signal,
-      onUpdate: (it) => setItems((xs) => xs.map((x) => (x.line === it.line ? it : x))),
-    })
+    const done = await fetchBatch(lines, depsFor(ctrl.signal))
     setItems(done)
     setSelected(new Set(done.filter((i) => i.status === 'ok').map((i) => i.line)))
     setPhase('preview')
+  }
+
+  /** 用户确认后，用建议的修正链接重试这一行 */
+  const tryFix = async (it: BatchItem) => {
+    const ctrl = new AbortController()
+    const r = await fetchItem({ ...it }, depsFor(ctrl.signal), seen.current, true)
+    setItems((xs) => xs.map((x) => (x.line === r.line ? { ...r } : x)))
+    if (r.status === 'ok') setSelected((s) => new Set([...s, r.line]))
   }
 
   const save = async () => {
@@ -64,9 +78,11 @@ export default function BatchTextImport({ onClose, onDone }: { onClose: () => vo
     let stoppedForQuota = false
     for (const it of chosen) {
       try {
-        await addSticker(it.prepared!, it.name, 'mine')
-        added++
-        setSaved(added)
+        for (const p of [it.prepared!, ...(it.more ?? [])]) {
+          await addSticker(p, it.name, 'mine')
+          added++
+          setSaved(added)
+        }
       } catch (e) {
         const quota = /QuotaExceeded/i.test(String((e as { name?: string })?.name ?? '') + String((e as { inner?: { name?: string } })?.inner?.name ?? ''))
         failed.push({ name: `第 ${it.line} 行「${it.name}」`, reason: quota ? '设备存储空间不足，已停止导入' : e instanceof Error ? e.message : '保存失败' })
@@ -181,9 +197,14 @@ export default function BatchTextImport({ onClose, onDone }: { onClose: () => vo
                       <div key={i} className="text-[11px] text-[var(--c-accent-strong)]">已自动修正：{c}</div>
                     ))}
                     {it.status === 'ok' || it.status === 'duplicate'
-                      ? it.appliedFix && <div className="text-[11px] text-[var(--c-accent-strong)]">已自动修正：{it.appliedFix}（已下载验证）</div>
-                      : it.warning && !it.reason && <div className="text-[11px] text-[var(--c-text-2)]">注意：{it.warning}</div>}
-                    {it.reason && <div className={`text-[11px] ${it.status === 'duplicate' ? 'text-[var(--c-text-3)]' : 'text-[var(--c-danger)]'}`}>{it.reason}</div>}
+                      ? it.appliedFix && <div className="text-[11px] text-[var(--c-accent-strong)]">已按你的确认修正：{it.appliedFix}（已下载验证）</div>
+                      : it.warning && <div className="text-[11px] text-[var(--c-text-2)]">注意：{it.warning}</div>}
+                    {it.reason && <div className={`text-[11px] ${it.status === 'failed' ? 'text-[var(--c-danger)]' : 'text-[var(--c-text-3)]'}`}>{it.reason}</div>}
+                    {it.status === 'failed' && it.suggestFix && phase === 'preview' && (
+                      <button onClick={() => void tryFix(it)} className="press mt-1 h-6 px-2.5 rounded-full border border-[var(--c-line)] bg-white/45 text-[11px] text-[var(--c-accent-strong)] text-left">
+                        原链接打不开，试试修正：{it.suggestFix.fix}
+                      </button>
+                    )}
                   </div>
                   {phase === 'preview' && (
                     <button onClick={() => remove(it.line)} aria-label={`删除第 ${it.line} 行`} className="press shrink-0 self-start h-6 px-2 rounded-full text-[11px] text-[var(--c-text-3)]">

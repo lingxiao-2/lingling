@@ -325,7 +325,7 @@ test('用户发送的表情包：保存为表情包消息，并以含义进入�
   const msgs = await active()
   assert.equal(msgs[0].kind, 'sticker')
   assert.equal(msgs[0].stickerId, st.id)
-  assert.deepEqual(calls[0].body.messages.slice(1), [{ role: 'user', content: '[发来一个表情包：委屈]' }])
+  assert.deepEqual(calls[0].body.messages.slice(1), [{ role: 'user', content: '[发来一个表情包，名称是「委屈」（没有识别图片，只知道名称；不要描述画面）]' }])
 })
 
 test('中途断网：已写完的消息保留；重试不会重复保存，模型能看到已发出的内容', async () => {
