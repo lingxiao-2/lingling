@@ -13,6 +13,8 @@ import { db } from '../db/db'
 import type { Character, Moment, MomentActor } from '../db/schema'
 import { deleteComment, deleteMoment, restoreMoment } from '../db/momentRepo'
 import { feed } from '../services/moments'
+import { ActionSheet } from '../components/Sheet'
+import { canJoinMoments, generateCharacterMoment, replyToComment, useMomentBusy } from '../services/ai/momentEngine'
 import { useProfile } from '../store/profile'
 
 export function ImageViewer({ images, index, onClose }: { images: string[]; index: number; onClose: () => void }) {
@@ -44,6 +46,8 @@ export default function MomentsPage() {
   const [viewer, setViewer] = useState<{ images: string[]; index: number } | null>(null)
   const [undo, setUndo] = useState<Undo | null>(null)
   const [err, setErr] = useState('')
+  const [picking, setPicking] = useState(false)
+  const busy = useMomentBusy()
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => () => clearTimeout(timer.current), [])
@@ -60,10 +64,28 @@ export default function MomentsPage() {
     return { name: c?.name ?? '已删除的角色', avatar: c?.avatar }
   }
   const list = moments ? feed(moments) : []
+  const joinable = chars.filter(canJoinMoments)
+  const fail = (e: unknown) => setErr(e instanceof Error ? e.message : String(e))
+  const posting = [...busy.keys()].filter((k) => k.startsWith('post:')).map((k) => byId.get(k.slice(5))?.name ?? '')
+  const noteFor = (m: Moment) => {
+    const reply = busy.get(`reply:${m.id}`)
+    if (reply) return reply
+    const reacting = [...busy.keys()].filter((k) => k.startsWith(`react:${m.id}:`)).map((k) => byId.get(k.split(':')[2])?.name ?? '')
+    return reacting.length ? `${reacting.join('、')}正在看你的动态…` : undefined
+  }
 
   return (
     <>
-      <NavBar title="动态" right={<NavButton label="发动态" icon="camera" onClick={() => nav('/moments/new')} />} />
+      <NavBar
+        title="动态"
+        sideWidth={84}
+        right={
+          <>
+            <NavButton label="让角色发动态" icon="character" onClick={() => { setErr(''); setPicking(true) }} />
+            <NavButton label="发动态" icon="camera" onClick={() => nav('/moments/new')} />
+          </>
+        }
+      />
       <div className="flex-1 min-h-0 overflow-y-auto pb-24">
         <section className="mx-3 mt-2 glass rounded-[var(--radius-card)] px-4 py-4 flex items-center gap-3">
           <Avatar name={profile.nickname || '我'} src={profile.avatar} size={56} />
@@ -73,6 +95,7 @@ export default function MomentsPage() {
           </div>
         </section>
 
+        {posting.length > 0 && <p className="mx-6 mt-2 text-[12px] text-[var(--c-text-3)]">{posting.join('、')}正在写动态…</p>}
         {moments && list.length === 0 && (
           <Empty
             title="还没有动态"
@@ -92,6 +115,8 @@ export default function MomentsPage() {
                   void deleteMoment(x.id).then(() => offerUndo({ text: '动态已删除', run: () => restoreMoment(x.id) }), (e) => setErr(String(e?.message ?? e)))
                 }
                 onCommentDeleted={(x, c) => offerUndo({ text: '评论已删除', run: () => deleteComment(x.id, c.id, false) })}
+                onCommented={(x, c) => void replyToComment(x.id, c).catch(fail)}
+                busyNote={noteFor(m)}
               />
             ))}
           </div>
@@ -115,6 +140,14 @@ export default function MomentsPage() {
             </button>
           </div>
         </div>
+      )}
+      {picking && (
+        <ActionSheet
+          title="让谁发一条动态？"
+          subtitle={joinable.length ? '会向你配置的 AI 服务发送一次请求；只依据角色的人设、记忆和你们真实的聊天，不会编造共同经历' : '没有开启「参与朋友圈」的角色。可以在角色资料页开启'}
+          actions={joinable.map((c) => ({ label: c.name, onClick: () => { setPicking(false); void generateCharacterMoment(c.id).catch(fail) } }))}
+          onClose={() => setPicking(false)}
+        />
       )}
       {viewer && <ImageViewer images={viewer.images} index={viewer.index} onClose={() => setViewer(null)} />}
     </>
