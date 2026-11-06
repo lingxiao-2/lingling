@@ -6,7 +6,7 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { defaultLayout, normalizeLayout, setPage, setWidgetCharacter, type DesktopLayout } from './layout'
+import { defaultLayout, normalizeLayout, setPage, setWidgetCharacter, setWidgetNote, type DesktopLayout } from './layout'
 
 export const LAYOUT_KEY = 'desktop-layout'
 
@@ -83,4 +83,21 @@ export async function saveNote(text: string): Promise<DesktopNote> {
 
 export function useDesktopNote(): DesktopNote | undefined {
   return useLiveQuery(async () => (await db.settings.get(NOTE_KEY))?.value as DesktopNote | undefined, [])
+}
+
+/** 便签小组件换一张便签（同一个事务里读取最新布局，只改这一个小组件） */
+export async function saveWidgetNote(widgetId: string, noteId: string | undefined): Promise<void> {
+  await db.transaction('rw', [db.settings], async () => {
+    const row = await db.settings.get(LAYOUT_KEY)
+    const cur = row ? normalizeLayout(row.value) : defaultLayout()
+    await db.settings.put({ key: LAYOUT_KEY, value: setWidgetNote(cur, widgetId, noteId) })
+  })
+}
+
+/** 桌面上第一个便签小组件的 ID（没有则为 null） */
+export async function firstNoteWidget(): Promise<string | null> {
+  const row = await db.settings.get(LAYOUT_KEY)
+  const l = row ? normalizeLayout(row.value) : defaultLayout()
+  for (const p of l.pages) for (const it of p) if (it.kind === 'widget' && it.widget === 'note') return it.id
+  return null
 }

@@ -59,11 +59,14 @@ const check = (ok, name) => {
   await page.locator('[role=tab]').nth(0).click()
   await page.waitForTimeout(600)
 
-  // 便签：编辑、保存、刷新后仍在
+  // 便签：点小组件进入便签应用写一张，返回桌面后显示，刷新后仍在
   await page.locator('[aria-label="便签小组件"]').click()
+  await page.waitForURL(/#\/notes\/new\?widget=w-note/)
   await page.fill('textarea', '周五记得给沈遥写信')
-  await page.getByRole('button', { name: '保存' }).click()
-  await page.waitForTimeout(300)
+  await page.waitForURL(/#\/notes\/note/, { timeout: 3000 })
+  await page.goto(BASE + '#/')
+  await page.waitForSelector('[aria-label="Dock"]')
+  await page.waitForTimeout(500)
   check((await page.locator('[aria-label="便签小组件"]').getByText('周五记得给沈遥写信').count()) === 1, '便签保存后显示在小组件上')
   await page.reload()
   await page.waitForSelector('[aria-label="Dock"]')

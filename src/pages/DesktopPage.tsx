@@ -12,7 +12,8 @@ import { useNavigate } from 'react-router-dom'
 import AppIcon from '../desktop/AppIcon'
 import { appHref, APPS, type AppId } from '../desktop/apps'
 import { cellsOf, defaultLayout, GRID, itemAt, moveItem, type DesktopItem, type DesktopLayout, type Slot } from '../desktop/layout'
-import { loadLayout, NOTE_MAX, resetLayout, saveLayout, saveNote, savePage, saveWidgetCharacter, useDesktopLayout, useDesktopNote } from '../desktop/layoutStore'
+import { loadLayout, resetLayout, saveLayout, savePage, saveWidgetCharacter, useDesktopLayout } from '../desktop/layoutStore'
+import { migrateLegacyDesktopNote } from '../db/noteRepo'
 import { WidgetView } from '../desktop/widgets'
 import { ActionSheet } from '../components/Sheet'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -69,7 +70,6 @@ export default function DesktopPage() {
   const [drag, setDrag] = useState<Drag | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
   const [picking, setPicking] = useState<string | null>(null)
-  const [noteOpen, setNoteOpen] = useState(false)
   const chars = useLiveQuery(() => (picking ? db.characters.toArray() : []), [picking], [])
   const pager = useRef<HTMLDivElement>(null)
   const press = useRef<Press | null>(null)
@@ -78,9 +78,9 @@ export default function DesktopPage() {
   const scrollTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const restored = useRef(false)
 
-  // 第一次进入：生成并保存默认布局（以后不会再覆盖）
+  // 第一次进入：生成并保存默认布局（以后不会再覆盖）；旧版桌面便签复制成一张便签（只执行一次）
   useEffect(() => {
-    void loadLayout()
+    void loadLayout().then(() => migrateLegacyDesktopNote())
   }, [])
 
   // 读取到保存的布局后，停在上次的那一页（只做一次）
@@ -207,7 +207,11 @@ export default function DesktopPage() {
       return
     }
     if (it.widget === 'music') nav(appHref('music'))
-    else if (it.widget === 'note') setNoteOpen(true)
+    else if (it.widget === 'note') {
+      // 打开指定的那张便签；没有指定或已删除时，到便签应用里写一张或选一张
+      if (!it.noteId) return nav(`/notes/new?widget=${it.id}`)
+      void db.notes.get(it.noteId).then((n) => nav(n && !n.deletedAt ? `/notes/${n.id}` : `/notes?pickFor=${it.id}`))
+    }
     else if (it.widget === 'character') {
       if (!it.characterId) return setPicking(it.id)
       void db.characters.get(it.characterId).then(async (c) => {
@@ -347,7 +351,6 @@ export default function DesktopPage() {
           onClose={() => setPicking(null)}
         />
       )}
-      {noteOpen && <NoteEditor onClose={() => setNoteOpen(false)} />}
       {confirmReset && (
         <ConfirmDialog
           title="恢复默认桌面布局？"
@@ -360,42 +363,6 @@ export default function DesktopPage() {
           }}
         />
       )}
-    </div>
-  )
-}
-
-/** 便签小组件的编辑框（只保存在本机 settings 的 desktop-note） */
-function NoteEditor({ onClose }: { onClose: () => void }) {
-  const note = useDesktopNote()
-  const [text, setText] = useState<string | null>(null)
-  const value = text ?? note?.text ?? ''
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-6" onClick={onClose}>
-      <div className="absolute inset-0 sheet-overlay sheet-fade" />
-      <div className="card relative w-full max-w-sm p-4" onClick={(e) => e.stopPropagation()}>
-        <div className="serif-zh text-[16px] tracking-[0.06em] text-[var(--c-brand)]">便签</div>
-        <textarea
-          autoFocus
-          value={value}
-          maxLength={NOTE_MAX}
-          onChange={(e) => setText(e.target.value)}
-          rows={5}
-          placeholder="写一句话…"
-          className="mt-2 w-full resize-none rounded-[12px] bg-white/60 border border-[var(--c-line)] px-3 py-2 text-[16px] leading-relaxed outline-none focus:border-[var(--c-accent)]"
-        />
-        <div className="mt-1 flex items-center justify-between text-[11px] text-[var(--c-text-3)]">
-          <span>只保存在这台设备上</span>
-          <span>{value.trim().length} / {NOTE_MAX}</span>
-        </div>
-        <div className="mt-3 flex justify-end gap-2">
-          <button className="press h-9 px-4 rounded-full border border-[var(--c-line)] text-[13px] text-[var(--c-text-2)]" onClick={onClose}>
-            取消
-          </button>
-          <button className="press h-9 px-4 rounded-full bg-[var(--c-accent)] text-white text-[13px]" onClick={() => void saveNote(value).then(onClose)}>
-            保存
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
