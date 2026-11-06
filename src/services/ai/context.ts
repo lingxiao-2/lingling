@@ -56,6 +56,8 @@ export interface BuiltContext {
   relatedProfileChunks: number
   /** 本次发送的记忆 */
   usedMemoryIds: string[]
+  /** 资料使用情况：哪些内容进入了 system，哪些因长度或相关度没有发送（供预览页面显示） */
+  report: ContextReport
   historyCount: number
   /** 本次允许 AI 使用的表情包：短编号 → 真实 ID（解析回复时据此校验） */
   stickerMap: Map<string, string>
@@ -163,6 +165,14 @@ export function triggeredEntries(books: Lorebook[], recentText: string, maxChars
   return out
 }
 
+export interface ContextReport {
+  /** 实际发送的 system 段落（按顺序） */
+  sections: { label: string; chars: number }[]
+  /** 没有发送的内容 */
+  omitted: { label: string; chars: number; reason: string }[]
+  history: { sent: number; total: number }
+}
+
 export function buildContext(input: ContextInput): BuiltContext {
   const budget = { ...DEFAULT_BUDGET, ...(input.budget ?? {}) }
   const c = input.character
@@ -174,14 +184,22 @@ export function buildContext(input: ContextInput): BuiltContext {
   const recent = active.slice(-budget.scanDepth).map((x) => x.content).join('\n')
   const entries = triggeredEntries(input.lorebooks, recent, budget.loreChars)
 
-  const parts: string[] = [
+  const report: ContextReport = { sections: [], omitted: [], history: { sent: 0, total: 0 } }
+  const parts: string[] = []
+  const add = (label: string, text: string) => {
+    if (!text) return
+    parts.push(text)
+    report.sections.push({ label, chars: text.length })
+  }
+  const skip = (label: string, chars: number, reason: string) => chars > 0 && report.omitted.push({ label, chars, reason })
+  add('基本要求', 
     `你是「${name}」，正在一款聊天软件里和「${user}」聊天。请以${name}的身份、用第一人称自然地回复，不要替${user}说话或描写${user}的行为。` +
       `平时不必主动谈论技术细节；但如果${user}认真地问你是不是真人，要诚实说明你是 AI 扮演的角色。不要刻意让${user}依赖你，也不要劝${user}疏远现实中的人。`,
-  ]
+  )
   // 长篇人设分层：核心设定每次发送；超出预算的部分按与最近聊天的相关程度挑选（见 profile.ts）
   const layered = layerProfile(c)
   const related = pickRelated(layered.pool, recent)
-  const field = (label: string, v: string) => v && parts.push(`【${label}】\n${v}`)
+  const field = (label: string, v: string) => v && add(label, `【${label}】\n${v}`)
   field('角色简介', m(layered.core.bio))
   field('性格', m(layered.core.personality))
   field('说话风格', m(layered.core.speakingStyle))
@@ -191,35 +209,52 @@ export function buildContext(input: ContextInput): BuiltContext {
   // 已有关系：每次都发送，保证从第一句话起延续、长期聊天不「失忆」
   const rel = effectiveRelationship(c)
   const relText = relationshipSection(rel, user)
-  if (relText) parts.push(m(relText))
+  if (relText) add('关系', m(relText))
   if (related.length) {
-    parts.push(`【与当前话题相关的角色资料】（节选，供参考）\n${related.map((r) => `· ${r.label}：${m(r.text)}`).join('\n')}`)
+    add('与当前话题相关的扩展资料', `【与当前话题相关的角色资料】（节选，供参考）\n${related.map((r) => `· ${r.label}：${m(r.text)}`).join('\n')}`)
   }
+  // 超出核心预算、这次又与话题无关的扩展资料：不发送（聊到相关话题时会被挑中）
+  const notRelated = new Map<string, number>()
+  for (const ch of layered.pool) if (!related.includes(ch)) notRelated.set(ch.label, (notRelated.get(ch.label) ?? 0) + ch.text.length)
+  for (const [label, chars] of notRelated) skip(`扩展资料：${label}`, chars, '超出每次必发的长度，且与最近聊天不相关；聊到相关话题时才会带上')
   if (input.world) {
     const w = input.world
     const body = [w.tagline, w.description].filter((x) => x && x.trim()).join('\n')
-    parts.push(`【所在世界：${w.name}】${body ? `\n${clip(m(body), budget.worldChars)}` : ''}`)
+    add(`世界：${w.name}`, `【所在世界：${w.name}】${body ? `\n${clip(m(body), budget.worldChars)}` : ''}`)
+    skip(`世界：${w.name}`, m(body).length - budget.worldChars, `世界设定超过 ${budget.worldChars} 字，后面的部分被截掉`)
   }
   if (entries.length) {
-    parts.push(`【相关设定】\n${entries.map((e) => `· ${e.name}：${m(e.content)}`).join('\n')}`)
+    add('世界书（被关键词触发）', `【相关设定】\n${entries.map((e) => `· ${e.name}：${m(e.content)}`).join('\n')}`)
   }
+  const allEntries = input.lorebooks.flatMap((b) => b.entries.filter((e) => e.enabled && e.content.trim()))
+  const idle = allEntries.filter((e) => !entries.some((x) => x.id === e.id))
+  if (idle.length) skip(`世界书条目 ${idle.length} 条`, idle.reduce((n, e) => n + e.content.length, 0), '最近聊天没有提到它们的关键词（或超出世界书长度上限）')
   // 资料整理结果（用户确认保存后才有）
   const org = organizedSection(c.organized)
-  if (org) parts.push(m(org))
+  if (org) add('资料要点（整理结果）', m(org))
+  if (c.organized?.items.length) {
+    const sentPts = c.organized.items.filter((i) => i.cat !== 'examples' && org.includes(i.point)).length
+    const rest = c.organized.items.filter((i) => i.cat !== 'examples').length - sentPts
+    if (rest > 0) skip(`资料要点 ${rest} 条`, rest * 30, '资料要点每次最多约 1500 字，排在后面的没有发送')
+  }
   // 长期记忆：固定 / 重要的常驻，其余按话题挑选
   const usedMemories = pickMemories((input.memories ?? []).filter((x) => x.characterId === c.id), recent)
   const memText = memorySection(usedMemories, user)
-  if (memText) parts.push(memText)
+  if (memText) add(`长期记忆 ${usedMemories.length} 条`, memText)
+  const restMem = (input.memories ?? []).filter((x) => x.characterId === c.id && x.status === 'active' && !usedMemories.includes(x))
+  if (restMem.length) skip(`长期记忆 ${restMem.length} 条`, restMem.reduce((n, x) => n + x.content.length, 0), '与最近聊天不相关（或超出约 900 字上限）；聊到相关话题时才会带上')
   if (c.exampleDialogue?.trim()) {
-    parts.push(`【说话示例】（仅用于参考语气，不是你们真实发生过的对话，不要当作记忆）\n${clip(m(c.exampleDialogue), 1500)}`)
+    add('说话示例', `【说话示例】（仅用于参考语气，不是你们真实发生过的对话，不要当作记忆）\n${clip(m(c.exampleDialogue), 1500)}`)
+    skip('说话示例', m(c.exampleDialogue).length - 1500, '说话示例超过 1500 字，后面的部分被截掉')
   }
+  if (c.sourceDoc?.text) skip('导入原文全文', c.sourceDoc.chars, '全文只保存在本机供核对和重新整理；聊天时发送的是上面的字段和要点')
   const exchanges = active.filter((x) => x.senderType === 'user').length
-  parts.push(styleSection(c, exchanges, user, rel.status))
+  add('表达偏好', styleSection(c, exchanges, user, rel.status))
   const freq = stickerFrequency(c)
   const analyses = input.analyses ?? new Map<string, StickerAnalysis>()
   const offered = freq === 'never' ? { options: [], map: new Map<string, string>() } : offeredStickers(input.stickers ?? [], analyses, recent)
-  parts.push(formatSection(freq, offered.options))
-  parts.push('只依据以上设定和下面真实发生过的聊天内容回应，不要编造你们没有共同经历过的事情；不确定时可以自然地询问。')
+  add(offered.options.length ? `消息格式（含 ${offered.options.length} 个可用表情包）` : '消息格式', formatSection(freq, offered.options))
+  add('结尾提醒', '只依据以上设定和下面真实发生过的聊天内容回应，不要编造你们没有共同经历过的事情；不确定时可以自然地询问。')
   const stickerById = new Map((input.stickers ?? []).map((st) => [st.id, st]))
   const aliasOf = new Map([...offered.map].map(([a, id]) => [id, a]))
 
@@ -232,6 +267,7 @@ export function buildContext(input: ContextInput): BuiltContext {
     picked.unshift(active[i])
     used += len
   }
+  report.history = { sent: picked.length, total: active.length }
 
   // 相邻的同一方消息合并为一轮：用户的多条用空行分隔；角色的多条按消息格式写回，帮助模型保持格式
   const turns: { role: 'user' | 'assistant'; items: Message[] }[] = []
@@ -268,6 +304,7 @@ export function buildContext(input: ContextInput): BuiltContext {
     usedEntries: entries.map((e) => e.name),
     relatedProfileChunks: related.length,
     usedMemoryIds: usedMemories.map((x) => x.id),
+    report,
     historyCount: picked.length,
     stickerMap: offered.map,
   }

@@ -131,6 +131,12 @@ export default function CharacterProfilePage() {
           </div>
         )}
 
+        <div className="mx-4 mt-3">
+          <button onClick={() => nav(`/character/${id}/context`)} className="press w-full h-10 rounded-full border border-[var(--c-line)] bg-white/40 text-[13px] text-[var(--c-accent-strong)]">
+            查看发送给 AI 的设定
+          </button>
+        </div>
+
         <OrganizeCard c={c} autoOpen={params.get('organize') === '1' && !!c.sourceDoc} />
 
         {(c.greeting || c.exampleDialogue) && (
