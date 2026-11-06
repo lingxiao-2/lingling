@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 8
+export const DB_SCHEMA_VERSION = 9
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -553,6 +553,23 @@ export interface CalEvent {
   deletedAt?: number
 }
 
+/* ---------- AI 工具调用：执行记录（第六阶段，v9 新增表；不进入备份） ---------- */
+export interface ToolLog {
+  id: string
+  at: number
+  characterId: string
+  conversationId?: string
+  /** 工具名，例如 calendar.list_events */
+  tool: string
+  /** 授权方式：无需授权 / 本角色始终允许 / 用户允许本次 / 用户拒绝 / 权限禁止 / 未授权 */
+  confirmation: 'not_required' | 'always' | 'once' | 'user_rejected' | 'denied' | 'not_granted'
+  status: 'ok' | 'error' | 'rejected'
+  /** 简短的结果说明（只有条数、ID 等，不含日记 / 照片 / 便签正文） */
+  summary: string
+  error?: string
+  durationMs: number
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -574,6 +591,7 @@ export class LinglingDB extends Dexie {
   diaries!: Table<Diary, string>
   notes!: Table<Note, string>
   events!: Table<CalEvent, string>
+  toolLogs!: Table<ToolLog, string>
 
   constructor() {
     super('lingling-ai')
@@ -637,6 +655,10 @@ export class LinglingDB extends Dexie {
     // v8：生活应用「日历」。只新增一张表，不修改已有数据。
     this.version(8).stores({
       events: 'id, date, kind, deletedAt',
+    })
+    // v9：只新增 AI 工具执行记录表，不改动任何已有的表和数据
+    this.version(9).stores({
+      toolLogs: 'id, at, characterId, tool',
     })
   }
 }
