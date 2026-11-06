@@ -5,11 +5,12 @@
  *  - 已删除、被重新生成替换（superseded）的消息不进入上下文
  *  - 示例对话只作为语气参考，明确告知模型它不是真实发生过的对话
  */
-import type { Character, Lorebook, LoreEntry, Message, Sticker, StickerAnalysis, World } from '../../db/schema'
+import type { Character, Lorebook, LoreEntry, Memory, Message, Sticker, StickerAnalysis, World } from '../../db/schema'
 import { describeAnalysis } from '../vision/vision'
 import type { ChatTurn } from './provider'
 import { renderAssistantTurn, type ReplyPart } from './messageFormat'
 import { organizedSection } from './organize'
+import { memorySection, pickMemories } from './memory'
 import { formatSection, stickerFrequency, styleSection, type StickerOption } from './style'
 import { layerProfile, pickRelated } from './profile'
 import { effectiveRelationship, relationshipSection } from './relationship'
@@ -42,6 +43,8 @@ export interface ContextInput {
   stickers?: Sticker[]
   /** 表情包识别结果（按图片哈希） */
   analyses?: Map<string, StickerAnalysis>
+  /** 这个角色的长期记忆（只会用到已确认的） */
+  memories?: Memory[]
   budget?: Partial<ContextBudget>
 }
 
@@ -51,6 +54,8 @@ export interface BuiltContext {
   usedEntries: string[]
   /** 本次附带的扩展人设资料段数（长篇人设） */
   relatedProfileChunks: number
+  /** 本次发送的记忆 */
+  usedMemoryIds: string[]
   historyCount: number
   /** 本次允许 AI 使用的表情包：短编号 → 真实 ID（解析回复时据此校验） */
   stickerMap: Map<string, string>
@@ -200,6 +205,10 @@ export function buildContext(input: ContextInput): BuiltContext {
   // 资料整理结果（用户确认保存后才有）
   const org = organizedSection(c.organized)
   if (org) parts.push(m(org))
+  // 长期记忆：固定 / 重要的常驻，其余按话题挑选
+  const usedMemories = pickMemories((input.memories ?? []).filter((x) => x.characterId === c.id), recent)
+  const memText = memorySection(usedMemories, user)
+  if (memText) parts.push(memText)
   if (c.exampleDialogue?.trim()) {
     parts.push(`【说话示例】（仅用于参考语气，不是你们真实发生过的对话，不要当作记忆）\n${clip(m(c.exampleDialogue), 1500)}`)
   }
@@ -257,6 +266,7 @@ export function buildContext(input: ContextInput): BuiltContext {
     messages: [{ role: 'system', content: parts.join('\n\n') }, ...chat],
     usedEntries: entries.map((e) => e.name),
     relatedProfileChunks: related.length,
+    usedMemoryIds: usedMemories.map((x) => x.id),
     historyCount: picked.length,
     stickerMap: offered.map,
   }

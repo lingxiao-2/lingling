@@ -173,13 +173,14 @@ export interface MessageVersion {
   createdAt: number
 }
 
-/* ---------- 记忆（只建结构，V0.2 完善） ---------- */
+/* ---------- 长期记忆（每个角色独立；只保存用户确认过的内容） ---------- */
 export type MemoryKind =
-  | 'persona' // 角色固定设定
-  | 'user-fact' // 用户明确提供的信息
-  | 'long-term' // 已确认的长期记忆
-  | 'world' // 世界观资料
-  | 'event' // 剧情事件
+  | 'persona' // 角色固定设定（保留：旧结构）
+  | 'user-fact' // 用户明确希望角色记住的事 / 用户提供的信息
+  | 'long-term' // 已确认的长期记忆（保留：旧结构）
+  | 'world' // 世界观资料（保留：旧结构）
+  | 'event' // 重要共同经历（真实发生在聊天中，或用户写下的）
+  | 'recent' // 最近聊天事件（较短期，优先级低）
 
 export interface Memory {
   id: string
@@ -188,8 +189,22 @@ export interface Memory {
   content: string
   /** 来源消息，编辑/删除来源后可据此标记失效 */
   sourceMessageIds: string[]
-  status: 'active' | 'invalidated'
+  /** pending：从聊天中提议、等待用户确认；active：已确认；invalidated：来源被删除等原因失效 */
+  status: 'active' | 'invalidated' | 'pending'
   createdAt: number
+  /** 以下为 V1 新增，均可选（旧数据没有也能正常使用） */
+  updatedAt?: number
+  /** 固定：每次聊天都带上 */
+  pinned?: boolean
+  /** 1 普通 · 2 重要 · 3 非常重要 */
+  priority?: 1 | 2 | 3
+  /** 健康、财务等敏感内容：只在话题相关时发送，不会固定常驻 */
+  sensitive?: boolean
+  /** 来源：用户手写 / 用户在聊天中要求记住 / 从聊天中提议后用户确认 */
+  origin?: 'manual' | 'user-request' | 'suggested'
+  /** 来源消息原文摘录（用户可核对） */
+  quote?: string
+  lastUsedAt?: number
 }
 
 /* ---------- 朋友圈 / 表情（只建结构，V0.2 完善） ---------- */

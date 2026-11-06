@@ -139,8 +139,11 @@ export async function sendUserMessage(conversationId: string, text: string): Pro
 }
 
 export async function softDeleteMessage(message: Message): Promise<void> {
-  await db.transaction('rw', [db.messages, db.conversations], async () => {
+  await db.transaction('rw', [db.messages, db.conversations, db.memories], async () => {
     await db.messages.update(message.id, { deleted: true, updatedAt: Date.now() })
+    // 依据这条消息产生的记忆随之失效（不再发送给模型；用户可在记忆页查看）
+    const affected = (await db.memories.toArray()).filter((m) => m.status !== 'invalidated' && m.sourceMessageIds?.includes(message.id))
+    for (const m of affected) await db.memories.update(m.id, { status: 'invalidated', updatedAt: Date.now() })
     const last = (
       await db.messages.where('conversationId').equals(message.conversationId).sortBy('createdAt')
     )

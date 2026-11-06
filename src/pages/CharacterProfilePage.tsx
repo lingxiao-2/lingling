@@ -30,6 +30,14 @@ export default function CharacterProfilePage() {
   const nav = useNavigate()
   const [params] = useSearchParams()
   const c = useLiveQuery(async () => (await db.characters.get(id)) ?? null, [id])
+  const memCount = useLiveQuery(
+    async () => {
+      const ms = await db.memories.where('characterId').equals(id).toArray()
+      return { active: ms.filter((m) => m.status === 'active').length, pending: ms.filter((m) => m.status === 'pending').length }
+    },
+    [id],
+    { active: 0, pending: 0 },
+  )
   const [confirmDel, setConfirmDel] = useState(false)
   const [picker, setPicker] = useState(false)
   const [unlinkTarget, setUnlinkTarget] = useState<Lorebook | null>(null)
@@ -89,6 +97,16 @@ export default function CharacterProfilePage() {
         </div>
 
         <RelationshipCard c={c} />
+
+        <Section title="记忆">
+          <button onClick={() => nav(`/character/${id}/memories`)} className="press w-full flex items-center justify-between px-4 py-3 text-left">
+            <span className="text-[14px]">
+              已记住 {memCount.active} 条
+              {memCount.pending > 0 && <span className="ml-2 text-[12px] text-[var(--c-accent-strong)]">{memCount.pending} 条待确认</span>}
+            </span>
+            <span className="text-[12px] text-[var(--c-text-3)]">查看与管理</span>
+          </button>
+        </Section>
 
         <Section title="设定">
           <Block label="与你的关系" text={c.relationToUser} />
