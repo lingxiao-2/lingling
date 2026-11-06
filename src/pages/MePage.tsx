@@ -129,13 +129,13 @@ export default function MePage() {
         </Group>
 
         <Group en="Data">
-          <Row icon="backup" label="备份与恢复（.lingling）" value="V0.3 开放" />
+          <Row icon="backup" label="备份与恢复" value=".lingling 文件" onClick={() => nav('/me/backup')} right={<Icon name="forward" size="sm" />} />
           <Row icon="data" label="数据存储" value="仅本设备浏览器" />
           <Row icon="info" label="聆聆 AI" value="V0.1" />
         </Group>
 
         <p className="mx-7 mt-4 text-[11px] leading-relaxed text-[var(--c-text-3)]">
-          所有数据保存在当前浏览器的本地存储中。清除 Safari 网站数据或更换设备会导致数据丢失，完整备份功能将在后续版本提供。
+          所有数据保存在当前浏览器的本地存储中。清除 Safari 网站数据或更换设备会导致数据丢失，请在「备份与恢复」中定期导出。
         </p>
 
         {/* 品牌标识放在这里，消息页顶部不再放大标题 */}

@@ -19,6 +19,7 @@ import LorebookEditPage from './pages/LorebookEditPage'
 import WorldDetailPage from './pages/WorldDetailPage'
 import WorldEditPage from './pages/WorldEditPage'
 import StickerSettingsPage from './pages/StickerSettingsPage'
+import BackupPage from './pages/BackupPage'
 
 function TabLayout() {
   return (
@@ -56,6 +57,7 @@ export default function App() {
       <Route path="me/profile" element={<ProfileEditPage />} />
       <Route path="me/theme" element={<ThemeSettingsPage />} />
       <Route path="me/stickers" element={<StickerSettingsPage />} />
+      <Route path="me/backup" element={<BackupPage />} />
       <Route path="import" element={<ImportPage />} />
       {/* 旧入口，保留以免已有链接失效 */}
       <Route path="lorebooks" element={<Navigate to="/contacts?tab=lorebooks" replace />} />
