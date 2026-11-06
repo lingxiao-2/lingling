@@ -11,9 +11,10 @@ import { useSyncExternalStore } from 'react'
 import { db, DEFAULT_PROFILE } from '../../db/db'
 import { getDeviceId, normalizeAIConfig } from './service'
 import { DEFAULT_WORLD_ID } from '../../db/schema'
-import type { AIConfig, Lorebook, Message, Sticker, UserProfile } from '../../db/schema'
+import type { AIConfig, Lorebook, Memory, Message, Sticker, UserProfile } from '../../db/schema'
 import { uid } from '../../lib/util'
 import { buildContext } from './context'
+import { proposeFromRequests } from './memory'
 import { capParts, MAX_PARTS, parseReply, type ReplyPart } from './messageFormat'
 import { AIError, streamChat } from './openai'
 import type { ChatTurn, ContentPart } from './provider'
@@ -236,7 +237,30 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
       visionNote = `表情包识别不可用：${vs.reason}`
     }
 
-    const ctx = buildContext({ character, userName: profile.nickname, world, lorebooks: books, history, stickers, analyses })
+    // 长期记忆：用户在聊天中明确要求「记住」的话，原样保存（敏感内容先等用户确认）
+    let memories = await db.memories.where('characterId').equals(character.id).toArray()
+    const requested = proposeFromRequests(history, memories)
+    if (requested.length) {
+      const now = Date.now()
+      const rows: Memory[] = requested.map((p) => ({
+        id: uid('mem'),
+        characterId: character.id,
+        kind: p.kind,
+        content: p.content,
+        sourceMessageIds: p.sourceMessageIds,
+        quote: p.quote,
+        origin: p.origin,
+        sensitive: p.sensitive,
+        status: p.sensitive ? 'pending' : 'active',
+        priority: 2,
+        createdAt: now,
+        updatedAt: now,
+      }))
+      await db.memories.bulkAdd(rows)
+      memories = [...memories, ...rows]
+    }
+    const ctx = buildContext({ character, userName: profile.nickname, world, lorebooks: books, history, stickers, analyses, memories })
+    if (ctx.usedMemoryIds.length) void db.memories.where('id').anyOf(ctx.usedMemoryIds).modify({ lastUsedAt: Date.now() })
     // 聊天模型本身支持图片时：把最新发来的表情包原图也一起交给它（官方多模态格式）
     if (vs?.ok && vs.vision.mode === 'chat' && vs.vision.attachToChat && lastUserStickers.length) {
       await attachStickerImages(ctx.messages, lastUserStickers.slice(-2))

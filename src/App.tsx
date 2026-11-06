@@ -10,6 +10,7 @@ import MePage from './pages/MePage'
 import ChatPage from './pages/ChatPage'
 import CharacterEditPage from './pages/CharacterEditPage'
 import CharacterProfilePage from './pages/CharacterProfilePage'
+import MemoryPage from './pages/MemoryPage'
 import ApiSettingsPage from './pages/ApiSettingsPage'
 import ProfileEditPage from './pages/ProfileEditPage'
 import ThemeSettingsPage from './pages/ThemeSettingsPage'
@@ -52,6 +53,7 @@ export default function App() {
       <Route path="character/new" element={<CharacterEditPage />} />
       <Route path="character/:id" element={<CharacterProfilePage />} />
       <Route path="character/:id/edit" element={<CharacterEditPage />} />
+      <Route path="character/:id/memories" element={<MemoryPage />} />
       <Route path="me/api" element={<ApiSettingsPage />} />
       <Route path="me/profile" element={<ProfileEditPage />} />
       <Route path="me/theme" element={<ThemeSettingsPage />} />
