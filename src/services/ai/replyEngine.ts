@@ -262,7 +262,7 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
       await attachStickerImages(ctx.messages, lastUserStickers.slice(-2))
     }
     const stickerNames = new Map(stickers.map((st) => [st.id, st.name.trim()]))
-    save = (part, index) => savePart({ convId, runId, index, part, characterId: character.id, model: config.model, family: regenerateFamily, stickerName: stickerNames.get(part.type === 'sticker' ? part.stickerId : '') })
+    save = (part, index) => savePart({ convId, runId, index, part, characterId: character.id, model: config.model, family: regenerateFamily, stickerName: stickerNames.get(part.type === 'sticker' ? part.stickerId : ''), used: index === 0 ? ctx.used : undefined })
 
     const parse = (final: boolean) => parseReply(raw, ctx.stickerMap, final, character.name)
     try {
@@ -324,10 +324,11 @@ interface SavePartInput {
   model: string
   family?: string
   stickerName?: string
+  used?: Message['contextUsed']
 }
 
 /** 保存一条回复。ID 固定为 runId-序号：同一条重复保存只会覆盖，不会重复 */
-export async function savePart({ convId, runId, index, part, characterId, model, family, stickerName }: SavePartInput) {
+export async function savePart({ convId, runId, index, part, characterId, model, family, stickerName, used }: SavePartInput) {
   const id = `${runId}-${index}`
   await db.transaction('rw', [db.messages, db.conversations], async () => {
     if (await db.messages.get(id)) return
@@ -352,6 +353,7 @@ export async function savePart({ convId, runId, index, part, characterId, model,
       replyGroupId: runId,
       versionFamily: family ?? runId,
       model,
+      contextUsed: used,
       createdAt: t,
       updatedAt: t,
     })
