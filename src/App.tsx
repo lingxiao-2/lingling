@@ -6,6 +6,7 @@ import { ensureDefaults } from './db/db'
 import MessagesPage from './pages/MessagesPage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
+import MomentComposePage from './pages/MomentComposePage'
 import MePage from './pages/MePage'
 import ChatPage from './pages/ChatPage'
 import CharacterEditPage from './pages/CharacterEditPage'
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="moments" element={<MomentsPage />} />
         <Route path="me" element={<MePage />} />
       </Route>
+      <Route path="moments/new" element={<MomentComposePage />} />
       <Route path="chat/:convId" element={<ChatPage />} />
       <Route path="character/new" element={<CharacterEditPage />} />
       <Route path="character/:id/context" element={<ContextPreviewPage />} />
