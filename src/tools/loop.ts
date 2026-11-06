@@ -21,7 +21,7 @@ export interface ToolLimits {
   totalMs: number
 }
 
-export const DEFAULT_LIMITS: ToolLimits = { maxRounds: 4, maxCalls: 8, maxCallsPerRound: 4, maxToolChars: 16_000, totalMs: 60_000 }
+export const DEFAULT_LIMITS: ToolLimits = { maxRounds: 4, maxCalls: 8, maxCallsPerRound: 4, maxToolChars: 16_000, totalMs: 180_000 }
 
 /** 一轮模型调用；tools 为 undefined 时不提供工具 */
 export type TurnFn = (messages: ChatTurn[], tools: ReturnType<typeof toModelTools> | undefined) => Promise<TurnResult>
