@@ -13,6 +13,8 @@ export interface AuthDecision {
   confirmation: ToolLog['confirmation']
   /** 拒绝时给模型看的原因 */
   reason?: string
+  /** 不是权限问题而是无法执行（例如找不到、参数不合理、识图不可用） */
+  code?: ToolErrorCode
 }
 
 /** 授权：权限层（AI 工具权限）实现；在用户确认之前不会执行任何工具 */
@@ -116,7 +118,7 @@ export async function executeToolCall(call: ToolCall, env: ExecEnv): Promise<Exe
   }
   if (env.ctx.signal.aborted) return finish(fail('aborted', '已停止'), auth.confirmation)
   if (!auth.allowed) {
-    const code: ToolErrorCode = auth.confirmation === 'user_rejected' ? 'user_rejected' : auth.confirmation === 'denied' ? 'denied' : 'not_granted'
+    const code: ToolErrorCode = auth.code ?? (auth.confirmation === 'user_rejected' ? 'user_rejected' : auth.confirmation === 'denied' ? 'denied' : 'not_granted')
     return finish(fail(code, auth.reason ?? (code === 'user_rejected' ? '用户拒绝了这次操作' : '用户没有授权这项访问')), auth.confirmation)
   }
 

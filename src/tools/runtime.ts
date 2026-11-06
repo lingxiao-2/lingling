@@ -10,6 +10,10 @@ import { requestConfirmation } from './confirm'
 import type { Authorizer } from './executor'
 import { getMode, getPermissions } from './permissions'
 import { toolRegistry, type ToolDefinition } from './registry'
+import { registerLifeTools } from './lifeTools'
+
+// 生活应用工具：只有在角色被授予对应权限后才会提供给模型
+registerLifeTools(toolRegistry)
 
 export function toolCallingSupported(config: AIConfig): boolean {
   return config.service !== 'lingling'
@@ -34,7 +38,7 @@ export const authorizeTool: Authorizer = async (def, args, ctx) => {
   let danger = false
   if (def.preview) {
     const p = await def.preview(args, ctx)
-    if ('error' in p) return { allowed: false, confirmation: 'not_granted', reason: p.error }
+    if ('error' in p) return { allowed: false, confirmation: 'not_required', reason: p.error, code: /识图/.test(p.error) ? 'unavailable' : /没有找到/.test(p.error) ? 'not_found' : 'invalid' }
     title = p.title
     lines = p.lines
     danger = !!p.danger
