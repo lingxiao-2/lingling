@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 5
+export const DB_SCHEMA_VERSION = 6
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -475,6 +475,27 @@ export interface PhotoBlob {
   blob: Blob
 }
 
+/* ---------- 生活应用：日记（v6） ---------- */
+export type DiaryMood = 'calm' | 'happy' | 'tender' | 'excited' | 'missing' | 'tired' | 'sad' | 'anxious'
+
+export interface Diary {
+  id: string
+  /** 日记属于哪一天（本地日期 YYYY-MM-DD），可以与写作时间不同 */
+  date: string
+  title: string
+  body: string
+  mood?: DiaryMood
+  tags: string[]
+  /** 关联的照片（稳定 ID；照片被删除后显示为「照片已删除」） */
+  photoIds: string[]
+  /** 是否允许以后的 AI 功能读取这篇日记。默认 false：日记只有自己可见 */
+  aiReadable: boolean
+  createdAt: number
+  updatedAt: number
+  /** 移到「最近删除」的时间 */
+  deletedAt?: number
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -493,6 +514,7 @@ export class LinglingDB extends Dexie {
   albums!: Table<Album, string>
   photos!: Table<Photo, string>
   photoBlobs!: Table<PhotoBlob, string>
+  diaries!: Table<Diary, string>
 
   constructor() {
     super('lingling-ai')
@@ -544,6 +566,10 @@ export class LinglingDB extends Dexie {
       albums: 'id, name, createdAt',
       photos: 'id, albumId, createdAt, deletedAt',
       photoBlobs: 'id',
+    })
+    // v6：生活应用「日记」。只新增一张表，不修改已有数据。
+    this.version(6).stores({
+      diaries: 'id, date, updatedAt, deletedAt',
     })
   }
 }

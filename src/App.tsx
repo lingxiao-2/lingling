@@ -10,6 +10,9 @@ import MemoriesHubPage from './pages/MemoriesHubPage'
 import AlbumHomePage from './pages/album/AlbumHomePage'
 import AlbumGridPage from './pages/album/AlbumGridPage'
 import PhotoViewerPage from './pages/album/PhotoViewerPage'
+import DiaryListPage from './pages/diary/DiaryListPage'
+import DiaryEditorPage from './pages/diary/DiaryEditorPage'
+import DiaryTrashPage from './pages/diary/DiaryTrashPage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
 import MomentComposePage from './pages/MomentComposePage'
@@ -59,6 +62,9 @@ export default function App() {
       <Route path="album" element={<AlbumHomePage />} />
       <Route path="album/photo/:id" element={<PhotoViewerPage />} />
       <Route path="album/:albumId" element={<AlbumGridPage />} />
+      <Route path="diary" element={<DiaryListPage />} />
+      <Route path="diary/trash" element={<DiaryTrashPage />} />
+      <Route path="diary/:id" element={<DiaryEditorPage />} />
       <Route element={<TabLayout />}>
         <Route path="messages" element={<MessagesPage />} />
         <Route path="contacts" element={<ContactsPage />} />
