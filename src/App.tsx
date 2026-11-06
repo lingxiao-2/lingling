@@ -18,6 +18,7 @@ import NoteEditorPage from './pages/notes/NoteEditorPage'
 import NotesTrashPage from './pages/notes/NotesTrashPage'
 import CalendarPage from './pages/calendar/CalendarPage'
 import EventEditorPage from './pages/calendar/EventEditorPage'
+import LifeAccessPage from './pages/LifeAccessPage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
 import MomentComposePage from './pages/MomentComposePage'
@@ -93,6 +94,7 @@ export default function App() {
       <Route path="me/theme" element={<ThemeSettingsPage />} />
       <Route path="me/stickers" element={<StickerSettingsPage />} />
       <Route path="me/backup" element={<BackupPage />} />
+      <Route path="me/life-access" element={<LifeAccessPage />} />
       <Route path="import" element={<ImportPage />} />
       {/* 旧入口，保留以免已有链接失效 */}
       <Route path="lorebooks" element={<Navigate to="/contacts?tab=lorebooks" replace />} />

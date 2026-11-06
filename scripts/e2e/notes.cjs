@@ -8,6 +8,7 @@ const shots = process.argv[2]
 let failed = 0
 const check = (ok, name) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}`); if (!ok) failed++ }
 const widget = (page) => page.locator('[aria-label="便签小组件"]')
+const seen = (loc) => loc.first().waitFor({ timeout: 4000 }).then(() => true, () => false)
 
 ;(async () => {
   const browser = await chromium.launch()
@@ -27,7 +28,8 @@ const widget = (page) => page.locator('[aria-label="便签小组件"]')
 
   await page.getByRole('button', { name: '便签', exact: true }).click()
   await page.waitForURL(/#\/notes$/)
-  check((await page.getByText('旧版的桌面便签').count()) === 1, '旧版便签出现在便签应用中')
+  const card = page.locator('.note-card', { hasText: '旧版的桌面便签' })
+  check((await seen(card)) && (await card.count()) === 1, '旧版便签出现在便签应用中（只有一张，没有重复迁移）')
   // 新建一张清单
   await page.getByRole('button', { name: '新建便签' }).click()
   await page.fill('input[placeholder="标题（可不填）"]', '周末')

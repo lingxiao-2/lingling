@@ -130,6 +130,7 @@ export default function MePage() {
 
         <Group en="Data">
           <Row icon="backup" label="备份与恢复" value=".lingling 文件" onClick={() => nav('/me/backup')} right={<Icon name="forward" size="sm" />} />
+          <Row icon="lock" label="生活应用的 AI 权限" value="默认全部关闭" onClick={() => nav('/me/life-access')} right={<Icon name="forward" size="sm" />} />
           <Row icon="data" label="数据存储" value="仅本设备浏览器" />
           <Row icon="info" label="聆聆 AI" value="V0.1" />
         </Group>
