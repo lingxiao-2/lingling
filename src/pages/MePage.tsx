@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Icon } from '../theme/icons'
+import Brand from '../components/Brand'
 import NavBar from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import { Row } from '../components/ui'
@@ -136,6 +137,11 @@ export default function MePage() {
         <p className="mx-7 mt-4 text-[11px] leading-relaxed text-[var(--c-text-3)]">
           所有数据保存在当前浏览器的本地存储中。清除 Safari 网站数据或更换设备会导致数据丢失，完整备份功能将在后续版本提供。
         </p>
+
+        {/* 品牌标识放在这里，消息页顶部不再放大标题 */}
+        <div className="mt-8 mb-4 flex justify-center opacity-80">
+          <Brand />
+        </div>
       </div>
     </>
   )
