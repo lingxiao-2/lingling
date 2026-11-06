@@ -51,7 +51,7 @@ export const APPS: Record<AppId, DesktopApp> = {
   stickers: { id: 'stickers', name: '表情包', en: 'Stickers', icon: 'emoji', route: '/me/stickers' },
   backup: { id: 'backup', name: '备份', en: 'Backup', icon: 'backup', route: '/me/backup' },
   ai: { id: 'ai', name: 'AI 服务', en: 'AI', icon: 'key', route: '/me/api' },
-  album: { id: 'album', name: '相册', en: 'Album', icon: 'album', route: null, plan: '集中查看动态配图和你保存的图片。' },
+  album: { id: 'album', name: '相册', en: 'Album', icon: 'album', route: '/album' },
   diary: { id: 'diary', name: '日记', en: 'Diary', icon: 'diary', route: null, plan: '写日记，并可以选择让角色看到。' },
   notes: { id: 'notes', name: '便签', en: 'Notes', icon: 'note', route: null, plan: '完整的便签应用；桌面便签小组件会先上线。' },
   calendar: { id: 'calendar', name: '日历', en: 'Calendar', icon: 'calendar', route: null, plan: '纪念日、约定和提醒。' },

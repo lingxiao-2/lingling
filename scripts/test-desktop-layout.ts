@@ -2,6 +2,7 @@
 import 'fake-indexeddb/auto'
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { DB_SCHEMA_VERSION } from '../src/db/schema'
 import { db } from '../src/db/db'
 import { createCharacter, getOrCreateSingleConversation, sendUserMessage } from '../src/db/repo'
 import { defaultLayout, GRID, moveItem, setPage, type DesktopItem, type DesktopLayout } from '../src/desktop/layout'
@@ -102,7 +103,7 @@ test('恢复默认只改写桌面布局，角色、聊天、其他设置都不�
   assert.deepEqual(await loadLayout(), defaultLayout())
   assert.deepEqual({ chars: await db.characters.count(), msgs: await db.messages.count(), convs: await db.conversations.count() }, before)
   assert.deepEqual((await db.settings.get('profile'))!.value, { nickname: '小雪', signature: '' })
-  assert.equal(db.verno, 4)
+  assert.equal(db.verno, DB_SCHEMA_VERSION)
 })
 
 test('回归：拖动后紧接着保存页码，不会用旧布局覆盖刚移动的结果', async () => {

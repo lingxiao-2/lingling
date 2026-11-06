@@ -7,6 +7,9 @@ import MessagesPage from './pages/MessagesPage'
 import DesktopPage from './pages/DesktopPage'
 import ComingSoonPage from './pages/ComingSoonPage'
 import MemoriesHubPage from './pages/MemoriesHubPage'
+import AlbumHomePage from './pages/album/AlbumHomePage'
+import AlbumGridPage from './pages/album/AlbumGridPage'
+import PhotoViewerPage from './pages/album/PhotoViewerPage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
 import MomentComposePage from './pages/MomentComposePage'
@@ -53,6 +56,9 @@ export default function App() {
       <Route index element={<DesktopPage />} />
       <Route path="app/:id" element={<ComingSoonPage />} />
       <Route path="memories" element={<MemoriesHubPage />} />
+      <Route path="album" element={<AlbumHomePage />} />
+      <Route path="album/photo/:id" element={<PhotoViewerPage />} />
+      <Route path="album/:albumId" element={<AlbumGridPage />} />
       <Route element={<TabLayout />}>
         <Route path="messages" element={<MessagesPage />} />
         <Route path="contacts" element={<ContactsPage />} />
