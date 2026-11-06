@@ -68,10 +68,10 @@ test('布局修复：损坏数据退回默认；去掉未知和重复的应用�
   assert.equal(n.page, 2)
   const apps = [...n.dock, ...n.pages.flat().flatMap((x) => (x.kind === 'app' ? [x.app] : []))]
   assert.equal(apps.length, APP_IDS.length, '每个应用恰好一次')
-  assert.deepEqual(n.pages[0][0], { kind: 'app', app: 'diary' })
+  assert.deepEqual(n.pages[0].find((x) => x.kind === 'app'), { kind: 'app', app: 'diary' })
   // 小组件：保留合法的，按占用格数限制每页容量
   const w = (id: string): DesktopItem => ({ kind: 'widget', id, widget: 'clock', size: 'medium' })
-  const many = normalizeLayout({ pages: [[w('a'), w('b'), w('c'), w('d'), w('a')]], dock: [] })
+  const many = normalizeLayout({ version: 2, pages: [[w('a'), w('b'), w('c'), w('d'), w('a')]], dock: [] })
   assert.equal(many.pages[0].filter((x) => x.kind === 'widget').length, 3, '4×6 一页最多放 3 个 4×2 小组件')
   assert.equal(cellsOf(w('x')), 8)
 })

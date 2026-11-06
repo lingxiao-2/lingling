@@ -12,7 +12,12 @@ import { useNavigate } from 'react-router-dom'
 import AppIcon from '../desktop/AppIcon'
 import { appHref, APPS, type AppId } from '../desktop/apps'
 import { defaultLayout, GRID, itemAt, moveItem, type DesktopItem, type DesktopLayout, type Slot } from '../desktop/layout'
-import { loadLayout, resetLayout, saveLayout, savePage, useDesktopLayout } from '../desktop/layoutStore'
+import { loadLayout, NOTE_MAX, resetLayout, saveLayout, saveNote, savePage, saveWidgetCharacter, useDesktopLayout, useDesktopNote } from '../desktop/layoutStore'
+import { WidgetView } from '../desktop/widgets'
+import { ActionSheet } from '../components/Sheet'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { db } from '../db/db'
+import { getOrCreateSingleConversation } from '../db/repo'
 import { useUnreadTotal } from '../desktop/useUnread'
 import { ConfirmDialog } from '../components/Sheet'
 
@@ -33,10 +38,7 @@ function readSlot(el: Element | null): Slot | null {
   return null
 }
 
-/** 小组件占位（小组件本身在后续版本接入） */
-function WidgetBox({ item }: { item: Extract<DesktopItem, { kind: 'widget' }> }) {
-  return <div className="h-full w-full rounded-[22px] glass-1" aria-label={`小组件 ${item.widget}`} />
-}
+type WidgetItem = Extract<DesktopItem, { kind: 'widget' }>
 
 interface Press {
   id: number
@@ -64,6 +66,9 @@ export default function DesktopPage() {
   const [editing, setEditing] = useState(false)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [picking, setPicking] = useState<string | null>(null)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const chars = useLiveQuery(() => (picking ? db.characters.toArray() : []), [picking], [])
   const pager = useRef<HTMLDivElement>(null)
   const press = useRef<Press | null>(null)
   const suppressClick = useRef(false)
@@ -84,6 +89,18 @@ export default function DesktopPage() {
     if (el) el.scrollLeft = el.clientWidth * saved.page
     setPageState(saved.page)
   }, [saved])
+
+  // 图标大小跟随每行的实际高度（小屏幕如 iPhone SE 自动缩小，名称不会被裁掉）
+  const [iconSize, setIconSize] = useState(60)
+  useLayoutEffect(() => {
+    const el = pager.current
+    if (!el) return
+    const fit = () => setIconSize(Math.round(Math.min(60, Math.max(46, el.clientHeight / GRID.rows - 22))))
+    fit()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null
+    ro?.observe(el)
+    return () => ro?.disconnect()
+  }, [editing])
 
   useEffect(() => () => {
     clearTimeout(edgeTimer.current)
@@ -177,6 +194,27 @@ export default function DesktopPage() {
     }
   }
 
+  /** 小组件点按：时间无动作；音乐进入音乐应用；便签打开编辑；角色进入聊天（未选择时选择角色）。编辑模式下点角色小组件可以更换角色 */
+  const onClickWidget = (it: WidgetItem) => {
+    if (suppressClick.current) {
+      suppressClick.current = false
+      return
+    }
+    if (editing) {
+      if (it.widget === 'character') setPicking(it.id)
+      return
+    }
+    if (it.widget === 'music') nav(appHref('music'))
+    else if (it.widget === 'note') setNoteOpen(true)
+    else if (it.widget === 'character') {
+      if (!it.characterId) return setPicking(it.id)
+      void db.characters.get(it.characterId).then(async (c) => {
+        if (!c) return setPicking(it.id)
+        nav(`/chat/${await getOrCreateSingleConversation(c.id)}`)
+      })
+    }
+  }
+
   const onClickItem = (id: AppId) => {
     if (suppressClick.current || editing) {
       suppressClick.current = false
@@ -202,8 +240,14 @@ export default function DesktopPage() {
   const renderItem = (it: DesktopItem, s: Extract<Slot, { area: 'page' }>): ReactNode => {
     if (it.kind === 'widget') {
       return (
-        <div key={it.id} {...handlers(s)} className={`${it.size === 'medium' ? 'col-span-4' : 'col-span-2'} row-span-2 p-1.5 ${cellClass(s)}`}>
-          <WidgetBox item={it} />
+        <div
+          key={it.id}
+          {...handlers(s)}
+          role={it.widget === 'clock' ? undefined : 'button'}
+          onClick={() => onClickWidget(it)}
+          className={`${it.size === 'medium' ? 'col-span-4' : 'col-span-2'} row-span-2 p-[7px] ${it.widget === 'clock' ? '' : 'press'} ${cellClass(s)}`}
+        >
+          <WidgetView item={it} />
         </div>
       )
     }
@@ -217,7 +261,11 @@ export default function DesktopPage() {
   }
 
   return (
-    <div className="desk h-dvh flex flex-col overflow-hidden relative" style={{ paddingTop: 'calc(var(--safe-top) + 14px)' }} data-editing={editing || undefined}>
+    <div
+      className="desk h-dvh flex flex-col overflow-hidden relative"
+      style={{ paddingTop: 'calc(var(--safe-top) + 14px)', ['--desk-icon' as string]: `${iconSize}px` }}
+      data-editing={editing || undefined}
+    >
       {editing && (
         <div className="absolute left-0 right-0 z-20 flex justify-between px-4" style={{ top: 'calc(var(--safe-top) + 4px)' }}>
           <button className="press h-8 px-3.5 rounded-full glass-3 text-[13px] text-[var(--c-text-2)]" onClick={() => setConfirmReset(true)}>
@@ -257,7 +305,7 @@ export default function DesktopPage() {
       </div>
 
       <nav className="shrink-0 px-3" style={{ paddingBottom: 'calc(var(--safe-bottom) + 8px)' }} aria-label="Dock">
-        <div data-drop="dock" className={`desk-dock h-[88px] rounded-[32px] grid grid-cols-4 items-center px-2 ${drag && drag.over?.area === 'dock' ? 'desk-dock-over' : ''}`}>
+        <div data-drop="dock" style={{ height: iconSize + 28 }} className={`desk-dock rounded-[32px] grid grid-cols-4 items-center px-2 ${drag && drag.over?.area === 'dock' ? 'desk-dock-over' : ''}`}>
           {layout.dock.map((id, index) => {
             const s: Slot = { area: 'dock', index }
             return (
@@ -276,6 +324,18 @@ export default function DesktopPage() {
           {drag.item.kind === 'app' ? <AppIcon id={drag.item.app} showLabel={false} /> : <div className="h-[60px] w-[120px] rounded-[18px] glass-1" />}
         </div>
       )}
+      {picking && (
+        <ActionSheet
+          title="角色小组件显示谁？"
+          subtitle={chars.length ? '点按小组件会直接进入和 TA 的聊天，不会调用 AI' : '还没有角色，可以先在联系人中添加'}
+          actions={[
+            ...chars.map((c) => ({ label: c.name, onClick: () => { const id = picking; setPicking(null); void saveWidgetCharacter(id, c.id) } })),
+            ...(chars.length ? [{ label: '不显示角色', onClick: () => { const id = picking; setPicking(null); void saveWidgetCharacter(id, undefined) } }] : []),
+          ]}
+          onClose={() => setPicking(null)}
+        />
+      )}
+      {noteOpen && <NoteEditor onClose={() => setNoteOpen(false)} />}
       {confirmReset && (
         <ConfirmDialog
           title="恢复默认桌面布局？"
@@ -288,6 +348,42 @@ export default function DesktopPage() {
           }}
         />
       )}
+    </div>
+  )
+}
+
+/** 便签小组件的编辑框（只保存在本机 settings 的 desktop-note） */
+function NoteEditor({ onClose }: { onClose: () => void }) {
+  const note = useDesktopNote()
+  const [text, setText] = useState<string | null>(null)
+  const value = text ?? note?.text ?? ''
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-6" onClick={onClose}>
+      <div className="absolute inset-0 sheet-overlay sheet-fade" />
+      <div className="card relative w-full max-w-sm p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="serif-zh text-[16px] tracking-[0.06em] text-[var(--c-brand)]">便签</div>
+        <textarea
+          autoFocus
+          value={value}
+          maxLength={NOTE_MAX}
+          onChange={(e) => setText(e.target.value)}
+          rows={5}
+          placeholder="写一句话…"
+          className="mt-2 w-full resize-none rounded-[12px] bg-white/60 border border-[var(--c-line)] px-3 py-2 text-[16px] leading-relaxed outline-none focus:border-[var(--c-accent)]"
+        />
+        <div className="mt-1 flex items-center justify-between text-[11px] text-[var(--c-text-3)]">
+          <span>只保存在这台设备上</span>
+          <span>{value.trim().length} / {NOTE_MAX}</span>
+        </div>
+        <div className="mt-3 flex justify-end gap-2">
+          <button className="press h-9 px-4 rounded-full border border-[var(--c-line)] text-[13px] text-[var(--c-text-2)]" onClick={onClose}>
+            取消
+          </button>
+          <button className="press h-9 px-4 rounded-full bg-[var(--c-accent)] text-white text-[13px]" onClick={() => void saveNote(value).then(onClose)}>
+            保存
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
