@@ -11,7 +11,6 @@ import {
   backupFileName,
   BackupError,
   buildBackup,
-  parseBackup,
   pickCharacter,
   planRestore,
   rowsToWrite,
@@ -21,7 +20,7 @@ import {
   type RestoreMode,
   type RestorePlan,
 } from '../services/backup'
-import { applyRestore, CURRENT_SCHEMA, dumpAll, saveBackupFile } from '../services/backupDb'
+import { applyRestore, CURRENT_SCHEMA, dumpAll, estimateBackup, exportBackupBlob, LARGE_BACKUP_BYTES, presentTables, readBackupFile, saveBackupFile } from '../services/backupDb'
 import { storageEstimate } from '../services/stickerImport'
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
@@ -40,17 +39,22 @@ const mb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024)
 const MODES: { key: RestoreMode; label: string; hint: string }[] = [
   { key: 'merge-keep', label: '合并（保留本机）', hint: '只添加本机没有的内容；同一条数据两边不同时，保留本机的。最安全' },
   { key: 'merge-overwrite', label: '合并（以备份为准）', hint: '添加新内容；同一条数据两边不同时，用备份覆盖本机的' },
-  { key: 'replace', label: '完全替换', hint: '先清空本机全部数据，再恢复备份。本机有而备份没有的内容会丢失' },
+  { key: 'replace', label: '完全替换', hint: '先清空备份中包含的那些数据，再恢复备份。本机有而备份没有的内容会丢失；备份里根本没有的类别（例如旧版备份没有日记）不会被清空' },
 ]
 
 export default function BackupPage() {
   const characters = useLiveQuery(() => db.characters.orderBy('name').toArray(), [], [])
   const [charId, setCharId] = useState('')
   const [secrets, setSecrets] = useState(false)
+  const [withPhotos, setWithPhotos] = useState(true)
+  const photoInfo = useLiveQuery(async () => {
+    const ps = await db.photos.toArray()
+    return { count: ps.length, bytes: ps.reduce((n, p) => n + p.bytes, 0) }
+  }, [], { count: 0, bytes: 0 })
   const [busy, setBusy] = useState('')
-  const [ready, setReady] = useState<{ file: BackupFile; name: string; size: number } | null>(null)
+  const [ready, setReady] = useState<{ blob: Blob; file: BackupFile; name: string; size: number; zip: boolean; photos: number } | null>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [incoming, setIncoming] = useState<{ file: BackupFile; plan: RestorePlan; local: Awaited<ReturnType<typeof dumpAll>> } | null>(null)
+  const [incoming, setIncoming] = useState<{ file: BackupFile; plan: RestorePlan; local: Awaited<ReturnType<typeof dumpAll>>; photoBlobs: Map<string, Blob> } | null>(null)
   const [mode, setMode] = useState<RestoreMode>('merge-keep')
   const [confirm, setConfirm] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -62,9 +66,12 @@ export default function BackupPage() {
     setReady(null)
     try {
       const dump = await dumpAll()
-      const file = scope === 'all' ? buildBackup(dump, { schemaVersion: CURRENT_SCHEMA, includeSecrets: secrets }) : pickCharacter(dump, charId, { schemaVersion: CURRENT_SCHEMA })
-      const size = new Blob([JSON.stringify(file)]).size
-      setReady({ file, name: backupFileName(file), size })
+      const file = scope === 'all' ? buildBackup(dump, { schemaVersion: CURRENT_SCHEMA, includeSecrets: secrets, includePhotos: withPhotos }) : pickCharacter(dump, charId, { schemaVersion: CURRENT_SCHEMA })
+      // 生成前先估算大小：太大时提醒，避免 iPhone 内存不足
+      const est = await estimateBackup(file, scope === 'all' && withPhotos)
+      setBusy(est.photoCount ? `正在打包 ${est.photoCount} 张照片（约 ${mb(est.jsonBytes + est.photoBytes)}）…` : '正在生成备份…')
+      const out = await exportBackupBlob(file)
+      setReady({ blob: out.blob, file, name: backupFileName(file), size: out.blob.size, zip: out.zip, photos: est.photoCount })
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
     } finally {
@@ -73,7 +80,7 @@ export default function BackupPage() {
   }
   const save = async () => {
     if (!ready) return
-    const r = await saveBackupFile(ready.file, ready.name)
+    const r = await saveBackupFile(ready.blob, ready.name)
     if (r !== 'cancelled') setMsg({ ok: true, text: r === 'shared' ? '已打开分享面板：选择「存储到文件」即可保存到 iPhone 的「文件」App' : '已开始下载。iPhone 上可以在「文件 → 下载项」中找到' })
   }
 
@@ -83,9 +90,10 @@ export default function BackupPage() {
     setIncoming(null)
     setBusy('正在读取备份…')
     try {
-      const file = parseBackup(await f.text(), CURRENT_SCHEMA)
+      if (f.size > LARGE_BACKUP_BYTES) setBusy(`备份较大（${mb(f.size)}），正在读取，iPhone 上可能需要一点时间…`)
+      const { file, photoBlobs } = await readBackupFile(f, CURRENT_SCHEMA)
       const local = await dumpAll()
-      setIncoming({ file, plan: planRestore(file, local), local })
+      setIncoming({ file, plan: planRestore(file, local), local, photoBlobs })
       setMode('merge-keep')
     } catch (e) {
       setMsg({ ok: false, text: e instanceof BackupError ? e.message : `读取失败：${e instanceof Error ? e.message : String(e)}` })
@@ -100,10 +108,10 @@ export default function BackupPage() {
     setBusy('正在恢复…')
     try {
       const est = await storageEstimate()
-      const need = new Blob([JSON.stringify(incoming.file.tables)]).size
+      const need = new Blob([JSON.stringify(incoming.file.tables)]).size + [...incoming.photoBlobs.values()].reduce((n, b) => n + b.size, 0)
       if (est && est.quota - est.usage < need * 1.5) throw new Error(`设备存储空间可能不足（需要约 ${mb(need)}）`)
       const rows = rowsToWrite(incoming.file, incoming.local, incoming.plan, mode)
-      const n = await applyRestore(rows, mode)
+      const n = await applyRestore(rows, mode, { present: presentTables(incoming.file), photoBlobs: incoming.photoBlobs })
       setMsg({ ok: true, text: `恢复完成：写入 ${n} 条数据。` })
       setIncoming(null)
     } catch (e) {
@@ -120,7 +128,15 @@ export default function BackupPage() {
       <NavBar title="备份与恢复" back />
       <div className="flex-1 min-h-0 overflow-y-auto pb-14">
         <Card title="导出全部数据">
-          <p>包含角色与人设、世界、世界书、聊天记录、关系与记忆、表情包图片、主题与个人设置。导出为一个 .lingling 文件，可以保存到「文件」或发给自己。</p>
+          <p>包含角色与人设、世界、世界书、聊天记录、关系与记忆、表情包图片、主题与个人设置，以及相册、日记、便签、日历。导出为一个 .lingling 文件，可以保存到「文件」或发给自己。</p>
+          <label className="mt-2 flex items-start gap-2 text-[12.5px]">
+            <input type="checkbox" checked={withPhotos} onChange={(e) => setWithPhotos(e.target.checked)} className="mt-1" />
+            <span>
+              包含相册照片（{photoInfo.count} 张，约 {mb(photoInfo.bytes)}）
+              <span className="block text-[11.5px] text-[var(--c-text-3)]">照片作为单独的图片文件打包进备份，不会塞进一条巨大的文本里。不勾选时备份更小，但恢复后相册里不会有这些照片，日记中关联的照片会显示为已删除。</span>
+              {withPhotos && photoInfo.bytes > LARGE_BACKUP_BYTES && <span className="block text-[11.5px] text-[var(--c-danger)]">照片较多，生成和恢复时 iPhone 可能内存不足。建议在电脑上操作，或先不包含照片。</span>}
+            </span>
+          </label>
           <label className="mt-2 flex items-start gap-2 text-[12.5px]">
             <input type="checkbox" checked={secrets} onChange={(e) => setSecrets(e.target.checked)} className="mt-1" />
             <span>
@@ -151,7 +167,7 @@ export default function BackupPage() {
         {ready && (
           <Card title="备份已生成">
             <div>
-              {ready.name}（{mb(ready.size)}）
+              {ready.name}（{mb(ready.size)}{ready.zip ? `，含 ${ready.photos} 张照片原图` : ''}）
             </div>
             <div className="mt-1 text-[11.5px] text-[var(--c-text-3)]">{summarize(ready.file).map((s) => `${TABLE_LABEL[s.table]} ${s.count}`).join(' · ')}</div>
             {!ready.file.includesSecrets && <div className="mt-1 text-[11.5px] text-[var(--c-text-3)]">不含 API Key 和代理口令。</div>}
@@ -169,7 +185,7 @@ export default function BackupPage() {
           <input
             ref={fileRef}
             type="file"
-            accept=".lingling,.json,application/json"
+            accept=".lingling,.json,.zip,application/json,application/zip"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0]
@@ -181,6 +197,7 @@ export default function BackupPage() {
             <div className="mt-3">
               <div className="text-[12.5px]">
                 {incoming.file.scope === 'character' ? `角色备份「${incoming.file.characterName}」` : '全部数据备份'}，导出于 {new Date(incoming.file.exportedAt).toLocaleString()}
+                {incoming.photoBlobs.size > 0 && `，含 ${incoming.photoBlobs.size} 张照片原图`}
               </div>
               <div className="mt-1.5 rounded-[12px] bg-white/40 px-3 py-2 text-[12px]">
                 {incoming.plan.tables.map((t) => (
@@ -222,7 +239,7 @@ export default function BackupPage() {
         {busy && <div className="mx-6 mt-3 text-[12.5px] text-[var(--c-text-2)]">{busy}</div>}
         {msg && <div className={`mx-6 mt-3 text-[12.5px] leading-relaxed ${msg.ok ? 'text-[var(--c-accent-strong)]' : 'text-[var(--c-danger)]'}`}>{msg.text}</div>}
         <p className="mx-6 mt-4 text-[11px] leading-relaxed text-[var(--c-text-3)]">
-          数据只保存在这台设备的浏览器里。清除 Safari 网站数据、长期不打开网站或更换手机都可能丢失数据，建议定期导出备份。备份文件是普通 JSON，不会上传到任何服务器。
+          数据只保存在这台设备的浏览器里。清除 Safari 网站数据、长期不打开网站或更换手机都可能丢失数据，建议定期导出备份。没有照片时备份是 JSON 文件；包含照片时是 ZIP 格式（文件名仍为 .lingling）。备份不会上传到任何服务器。
         </p>
       </div>
       {confirm && incoming && (
@@ -232,7 +249,7 @@ export default function BackupPage() {
           confirmText={mode === 'replace' ? '清空并恢复' : '恢复'}
           message={
             mode === 'replace'
-              ? '本机现有的全部角色、聊天记录和表情包都会被清空，换成备份中的内容。建议先在上面「生成全部数据备份」保存一份当前数据。'
+              ? `本机这些类别会被清空，换成备份中的内容：${presentTables(incoming.file).map((t) => TABLE_LABEL[t]).join('、')}${presentTables(incoming.file).includes('photos') ? '（包括照片原图）' : ''}。备份里没有的类别不受影响。建议先在上面「生成全部数据备份」保存一份当前数据。`
               : mode === 'merge-overwrite'
                 ? `将新增 ${totals?.added ?? 0} 条，并用备份覆盖 ${totals?.conflicts ?? 0} 条不同的数据。`
                 : `将新增 ${totals?.added ?? 0} 条数据，本机已有的内容不会被改动。`

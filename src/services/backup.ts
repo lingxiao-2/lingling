@@ -14,7 +14,8 @@
 import type { AIConfig } from '../db/schema'
 
 export const BACKUP_FORMAT = 'lingling-backup'
-export const BACKUP_VERSION = 1
+/** 1：纯 JSON · 2：可以是 ZIP（backup.json + photos/ 下的照片原图文件）；v2 仍能读取 v1 */
+export const BACKUP_VERSION = 2
 
 /** 参与备份的表与主键 */
 export const TABLE_KEYS = {
@@ -32,6 +33,11 @@ export const TABLE_KEYS = {
   lorebooks: 'id',
   characterLorebooks: 'id',
   worldLorebooks: 'id',
+  albums: 'id',
+  photos: 'id',
+  diaries: 'id',
+  notes: 'id',
+  events: 'id',
 } as const
 
 export type TableName = keyof typeof TABLE_KEYS
@@ -54,6 +60,11 @@ export const TABLE_LABEL: Record<TableName, string> = {
   lorebooks: '世界书',
   characterLorebooks: '角色与世界书关联',
   worldLorebooks: '世界与世界书关联',
+  albums: '相册',
+  photos: '照片',
+  diaries: '日记',
+  notes: '便签',
+  events: '日程',
 }
 
 export interface BackupFile {
@@ -67,6 +78,8 @@ export interface BackupFile {
   characterName?: string
   includesSecrets: boolean
   tables: Dump
+  /** v2：随备份一起保存的照片原图文件（ZIP 中 photos/ 目录下）；没有时表示备份不含照片原图 */
+  photoFiles?: { id: string; path: string; bytes: number; mime: string }[]
 }
 
 export class BackupError extends Error {}
@@ -86,11 +99,17 @@ export function stripSecrets(settings: Row[]): Row[] {
   })
 }
 
-export function buildBackup(dump: Dump, opts: { schemaVersion: number; includeSecrets?: boolean; now?: number }): BackupFile {
+export function buildBackup(dump: Dump, opts: { schemaVersion: number; includeSecrets?: boolean; includePhotos?: boolean; now?: number }): BackupFile {
   const tables: Dump = {}
   for (const t of TABLES) {
-    const rows = dump[t]
-    if (!rows?.length) continue
+    // 不含照片的备份：照片信息也不放进去（只有信息没有原图的照片会让人误以为照片还在）
+    if (t === 'photos' && opts.includePhotos === false) continue
+    const rows = dump[t] ?? []
+    // 全部数据备份也记下空表：这样「替换」恢复时，备份里明确为空的表会被清空，备份里根本没有的表（例如不含照片）不会被动到
+    if (!rows.length) {
+      tables[t] = []
+      continue
+    }
     tables[t] = t === 'settings' && !opts.includeSecrets ? stripSecrets(rows) : rows
   }
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, schemaVersion: opts.schemaVersion, exportedAt: opts.now ?? Date.now(), scope: 'all', includesSecrets: !!opts.includeSecrets, tables }
@@ -132,6 +151,8 @@ export function pickCharacter(dump: Dump, characterId: string, opts: { schemaVer
       stickers,
       stickerImages: (dump.stickerImages ?? []).filter((i) => stickerIds.has(i.id)),
       stickerAnalyses: (dump.stickerAnalyses ?? []).filter((a) => hashes.has(a.hash)),
+      // 与这个角色关联的纪念日 / 生日
+      events: (dump.events ?? []).filter((e) => e.characterId === characterId),
     },
   }
 }
@@ -244,6 +265,11 @@ export function rowsToWrite(backup: BackupFile, local: Dump, plan: RestorePlan, 
     if (list.length) out[t] = list
   }
   return out
+}
+
+/** 备份中实际包含的表（恢复为「替换」时只清空这些表；旧版备份里没有的生活应用数据不会被清空） */
+export function presentTables(b: BackupFile): TableName[] {
+  return TABLES.filter((t) => Array.isArray(b.tables[t]))
 }
 
 export function summarize(b: BackupFile): { table: TableName; count: number }[] {
