@@ -102,6 +102,8 @@ export function findDuplicate(content: string, existing: Memory[], threshold = 0
 
 /** 「记住 / 别忘了 / 记得」：用户明确要求角色记住的话 */
 const REMEMBER = /(记住|记好|别忘了|不要忘了|不要忘记|千万记得|你要记得|帮我记|记一下)/
+/** 「帮我记个便签 / 记到日历里」是让角色使用便签、日历，不是要求记住（不当作长期记忆） */
+export const APP_RECORD = /(记|写|加|存)(一)?(个|张|条|下|到|在|进)?(我的)?(便签|日程|日历|备忘录?|待办|清单)|(便签|日程|日历|备忘录?|待办|清单)(里|上|中)/
 
 export interface MemoryProposal {
   kind: MemoryKind
@@ -121,7 +123,7 @@ export function proposeFromRequests(history: Message[], existing: Memory[]): Mem
   for (const m of history) {
     if (m.senderType !== 'user' || m.deleted || m.kind !== 'text' || handled.has(m.id)) continue
     const t = m.content.trim()
-    if (!REMEMBER.test(t) || t.length < 4) continue
+    if (!REMEMBER.test(t) || t.length < 4 || APP_RECORD.test(t)) continue
     const content = t.replace(/^(你)?(要|得|一定要)?(记住|记好|记一下|帮我记(一下)?)[，,：:\s]*/, '').slice(0, MEMORY_BUDGET.itemChars) || t
     const check = memoryCheck(content)
     if (!check.ok) continue

@@ -25,7 +25,7 @@ export const PERMISSION_INFO: Record<ToolPermission, { label: string; hint: stri
   diary_read: { label: '日记读取', hint: '只读，只包括逐篇勾选了「允许 AI 读取」的日记；不会写入长期记忆' },
   album_meta: { label: '相册元数据', hint: '照片名称、备注、日期和相册，不包含图片本身' },
   image_read: { label: '图片读取', hint: '把某张照片交给支持识图的模型；每一次都要你先确认，不会自动上传', write: true },
-  memory_propose: { label: '记忆提议', hint: '提出新的长期记忆，只进入「待确认」，由你决定是否保存' },
+  memory_propose: { label: '记忆（查看与提议）', hint: '查看这个角色自己的记忆；提出新的记忆只进入「待确认」，必须有你说过的原话' },
 }
 
 const MODES: PermissionMode[] = ['off', 'ask', 'always', 'deny']
