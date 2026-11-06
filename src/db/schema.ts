@@ -40,6 +40,8 @@ export interface Character {
   worldId: string
   /** 指定模型配置；为空则使用默认模型 */
   modelProfileId?: string
+  /** 联系人中的分组（为空或分组已删除时属于「未分组」），见 lib/characterGroups.ts */
+  groupId?: string
   permissions: CharacterPermissions
   /** 开场白（V2 起）。只是角色设定，不写入聊天记录 */
   greeting?: string
