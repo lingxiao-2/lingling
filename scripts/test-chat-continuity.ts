@@ -5,12 +5,14 @@
  *  - 同一角色连续 70 轮：每一轮请求里的人设原文和关系都完整、一致；请求长度有上限，不会无限增长
  *  - 用户修改关系：下一次请求立即使用新关系
  *  - 停止生成、重新生成仍然正常
+ *  - 回归：AI 回复和用户的下一条消息落在同一毫秒（时钟不前进）时，用户的新消息仍排在最后，请求以它结尾
  */
 import 'fake-indexeddb/auto'
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { db, setSetting } from '../src/db/db'
 import { createCharacter, getOrCreateSingleConversation, sendUserMessage } from '../src/db/repo'
+import { addSticker, sendUserSticker } from '../src/db/stickerRepo'
 import { saveRelationship } from '../src/components/RelationshipCard'
 import { getReplyState, regenerate, runReply, setPaceScaleForTesting, stopReply } from '../src/services/ai/replyEngine'
 import type { Relationship } from '../src/db/schema'
@@ -129,4 +131,47 @@ test('停止生成保留已写完的内容；重新生成仍然可用', async ()
   await regenerate(convId)
   const after = (await db.messages.where('conversationId').equals(convId).sortBy('createdAt')).filter((m) => m.senderType === 'character' && !m.superseded)
   assert.deepEqual(after.map((m) => m.content), ['重新说一遍'])
+})
+
+/** 冻结时钟：模拟回复写完后用户立刻发送（或设备时间被往回调），Date.now() 不再前进 */
+async function withFrozenClock(fn: () => Promise<void>) {
+  const real = Date.now
+  const frozen = real()
+  Date.now = () => frozen
+  try {
+    await fn()
+  } finally {
+    Date.now = real
+  }
+}
+
+test('回归：时钟不前进时，用户的新消息仍排在上一组回复之后；每次请求都以最新的用户消息结尾', async () => {
+  replies = ['<msg>第一条</msg><msg>第二条</msg><msg>第三条</msg>']
+  await withFrozenClock(async () => {
+    for (let i = 0; i < 12; i++) await round(`第 ${i + 1} 句，用户最新的话`)
+  })
+  const all = await db.messages.where('conversationId').equals(convId).sortBy('createdAt')
+  // createdAt 严格递增，顺序与发送顺序一致：用户 1 条、角色 3 条，循环
+  for (let i = 1; i < all.length; i++) assert.ok(all[i].createdAt > all[i - 1].createdAt, `第 ${i} 条时间没有递增`)
+  assert.deepEqual(all.map((m) => m.senderType), Array.from({ length: 12 }, () => ['user', 'character', 'character', 'character']).flat())
+  for (const [i, c] of calls.entries()) {
+    const last = c.messages[c.messages.length - 1]
+    assert.equal(last.role, 'user', `第 ${i + 1} 次请求没有以用户消息结尾`)
+    assert.match(last.content, new RegExp(`第 ${i + 1} 句，用户最新的话$`))
+    assert.match(c.messages[0].content, /关系：恋人/)
+    assert.ok(c.messages[0].content.includes(`【性格】\n${PERSONALITY}`))
+  }
+  const conv = await db.conversations.get(convId)
+  assert.equal(conv!.lastMessageAt, all[all.length - 1].createdAt)
+})
+
+test('回归：时钟不前进时，用户发的表情包同样排在上一组回复之后', async () => {
+  replies = ['<msg>嗯</msg><msg>好</msg>']
+  const st = await addSticker({ dataUrl: 'data:image/png;base64,iVBORw0KGgo=', thumbUrl: 'data:image/png;base64,iVBORw0KGgo=', hash: 'h1', mime: 'image/png', bytes: 8, width: 1, height: 1 } as never, '晚安')
+  await withFrozenClock(async () => {
+    await round('在吗')
+    await sendUserSticker(convId, st)
+  })
+  const all = await db.messages.where('conversationId').equals(convId).sortBy('createdAt')
+  assert.deepEqual(all.map((m) => [m.senderType, m.kind]), [['user', 'text'], ['character', 'text'], ['character', 'text'], ['user', 'sticker']])
 })

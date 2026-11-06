@@ -5,6 +5,7 @@
 import { db } from './db'
 import type { Message, Sticker } from './schema'
 import { uid } from '../lib/util'
+import { nextMessageTime } from './repo'
 import { isSafeStickerSrc, sha256Hex, STICKER_LIMITS, StickerError, type PreparedSticker } from '../services/stickers'
 
 export async function listStickers(): Promise<Sticker[]> {
@@ -101,8 +102,12 @@ export async function sendUserSticker(conversationId: string, sticker: Sticker):
     updatedAt: now,
   }
   await db.transaction('rw', [db.messages, db.conversations], async () => {
+    // 与文字消息相同：严格晚于会话最后一条消息，避免排到上一条 AI 回复之前
+    const t = nextMessageTime((await db.conversations.get(conversationId))?.lastMessageAt)
+    msg.createdAt = t
+    msg.updatedAt = t
     await db.messages.add(msg)
-    await db.conversations.update(conversationId, { lastMessagePreview: '[表情包]', lastMessageAt: now })
+    await db.conversations.update(conversationId, { lastMessagePreview: '[表情包]', lastMessageAt: t })
   })
   await markUsed(sticker.id)
   return msg
