@@ -20,6 +20,7 @@ import { AIError, streamChat } from './openai'
 import type { ChatTurn, ContentPart } from './provider'
 import { analysesFor, analyzeSticker, visionStatus } from '../vision/stickerVision'
 import { getStickerImage } from '../../db/stickerRepo'
+import { nextMessageTime } from '../../db/repo'
 
 export type ReplyStatus = 'idle' | 'waiting' | 'generating' | 'error'
 
@@ -322,7 +323,7 @@ export async function savePart({ convId, runId, index, part, characterId, model,
       for (const m of old) await db.messages.update(m.id, { superseded: true, versionFamily: family })
     }
     const conv = await db.conversations.get(convId)
-    const t = Math.max(Date.now(), (conv?.lastMessageAt ?? 0) + 1)
+    const t = nextMessageTime(conv?.lastMessageAt)
     const content = part.type === 'text' ? part.text : `[表情包]${stickerName ? ` ${stickerName}` : ''}`
     await db.messages.add({
       id,

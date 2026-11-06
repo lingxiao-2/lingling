@@ -112,6 +112,15 @@ function previewOf(text: string): string {
   return t.length > 40 ? `${t.slice(0, 40)}…` : t
 }
 
+/**
+ * 新消息的时间：不早于当前时间，并且严格晚于会话中最后一条消息。
+ * 聊天记录按 createdAt 排序；AI 回复的多条消息会依次 +1 毫秒，如果用户紧接着发送的消息只用 Date.now()，
+ * 可能比上一条回复「更早」，排序后用户的新消息跑到回复前面，上下文就会以角色的话结尾。所有新消息都用这个时间。
+ */
+export function nextMessageTime(lastMessageAt?: number): number {
+  return Math.max(Date.now(), (lastMessageAt ?? 0) + 1)
+}
+
 /** 保存用户发送的文字消息，同时更新会话摘要并清空草稿（同一事务） */
 export async function sendUserMessage(conversationId: string, text: string): Promise<Message> {
   const content = text.trim()
@@ -128,11 +137,14 @@ export async function sendUserMessage(conversationId: string, text: string): Pro
     updatedAt: now,
   }
   await db.transaction('rw', [db.messages, db.conversations], async () => {
+    const t = nextMessageTime((await db.conversations.get(conversationId))?.lastMessageAt)
+    msg.createdAt = t
+    msg.updatedAt = t
     await db.messages.add(msg)
     await db.conversations.update(conversationId, {
       draft: '',
       lastMessagePreview: previewOf(content),
-      lastMessageAt: now,
+      lastMessageAt: t,
     })
   })
   return msg
