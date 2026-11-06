@@ -466,3 +466,68 @@ body {
   position: absolute;
   inset: -3px 0;
 }
+
+/* ---------- 虚拟手机桌面 ---------- */
+.desk-icon {
+  width: var(--desk-icon, 60px);
+  height: var(--desk-icon, 60px);
+  border-radius: calc(var(--desk-icon, 60px) * 0.235);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-accent-strong);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.78), rgba(232, 240, 249, 0.6));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.85),
+    inset 0 -6px 12px rgba(160, 188, 220, 0.18),
+    0 3px 10px rgba(80, 110, 155, 0.14);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.desk-icon svg {
+  width: 27px;
+  height: 27px;
+}
+/* 待开发的应用：右下角一个小雪点，名称旁不加文字，打开后有说明 */
+.desk-icon-soon {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--c-text-3);
+  opacity: 0.55;
+}
+.desk-label {
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 13px;
+  letter-spacing: 0.02em;
+  color: var(--c-text);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.7);
+}
+.desk-pager {
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.desk-pager::-webkit-scrollbar {
+  display: none;
+}
+.desk-page {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+.desk-dock {
+  background: rgba(255, 255, 255, 0.36);
+  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  backdrop-filter: blur(22px) saturate(1.3);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 8px 28px rgba(80, 110, 155, 0.14);
+}

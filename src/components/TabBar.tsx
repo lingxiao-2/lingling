@@ -1,10 +1,10 @@
 import { NavLink } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db/db'
+import { useUnreadTotal } from '../desktop/useUnread'
 import { Icon, type IconName } from '../theme/icons'
 
 const TABS: { to: string; label: string; icon: IconName; end: boolean }[] = [
-  { to: '/', label: '消息', icon: 'tabMessages', end: true },
+  { to: '/', label: '桌面', icon: 'home', end: true },
+  { to: '/messages', label: '消息', icon: 'tabMessages', end: false },
   { to: '/contacts', label: '联系人', icon: 'tabContacts', end: false },
   { to: '/moments', label: '动态', icon: 'tabMoments', end: false },
   { to: '/me', label: '我的', icon: 'tabMe', end: false },
@@ -12,14 +12,11 @@ const TABS: { to: string; label: string; icon: IconName; end: boolean }[] = [
 
 /** 底部导航：悬浮的毛玻璃胶囊，细线图标 20px */
 export default function TabBar() {
-  const unread = useLiveQuery(async () => {
-    const all = await db.conversations.toArray()
-    return all.reduce((s, c) => s + c.unread, 0)
-  }, [], 0)
+  const unread = useUnreadTotal()
 
   return (
     <nav className="shrink-0 relative z-10 px-3 pt-1.5" style={{ paddingBottom: 'calc(var(--safe-bottom) + 6px)' }}>
-      <div className="glass-1 h-[52px] rounded-[22px] grid grid-cols-4 shadow-[var(--shadow-float)]">
+      <div className="glass-1 h-[52px] rounded-[22px] grid grid-cols-5 shadow-[var(--shadow-float)]">
         {TABS.map(({ to, label, icon, end }) => (
           <NavLink
             key={to}
@@ -33,7 +30,7 @@ export default function TabBar() {
           >
             <span className="relative">
               <Icon name={icon} size="md" stroke="thin" />
-              {to === '/' && unread > 0 && (
+              {to === '/messages' && unread > 0 && (
                 <span className="absolute -top-1 -right-2.5 min-w-[15px] h-[15px] px-1 rounded-full bg-[var(--c-danger)] text-white text-[9px] leading-[15px] text-center">
                   {unread > 99 ? '99+' : unread}
                 </span>
