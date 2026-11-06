@@ -135,7 +135,7 @@ export function features(text: string): Set<string> {
 }
 
 /** 常见的两字组合几乎处处出现，不能作为相关依据 */
-const STOP = new Set(['我们', '你们', '他们', '什么', '一个', '没有', '不是', '就是', '还是', '可以', '这个', '那个', '自己', '时候', '知道', '现在', '今天', '真的', '一下', '怎么', '因为', '所以', '但是', '如果', '已经', '觉得', '喜欢'])
+export const STOP = new Set(['我们', '你们', '他们', '什么', '一个', '没有', '不是', '就是', '还是', '可以', '这个', '那个', '自己', '时候', '知道', '现在', '今天', '真的', '一下', '怎么', '因为', '所以', '但是', '如果', '已经', '觉得', '喜欢'])
 
 /** 从扩展资料中挑出与最近聊天相关的段落（按原顺序返回） */
 export function pickRelated(pool: ProfileChunk[], recentText: string, budget = PROFILE_BUDGET.related, minScore = 2): ProfileChunk[] {

@@ -10,11 +10,11 @@
 import { useSyncExternalStore } from 'react'
 import { db } from '../../db/db'
 import { getDeviceId, normalizeAIConfig } from './service'
-import type { AIConfig, Memory, Message, Sticker } from '../../db/schema'
+import type { AIConfig, Message, Sticker } from '../../db/schema'
 import { uid } from '../../lib/util'
 import { buildContext } from './context'
 import { loadContextSources, loadMemories } from './contextInput'
-import { proposeFromRequests } from './memory'
+import { maybeAutoExtract, saveRememberRequests } from './autoMemory'
 import { capParts, MAX_PARTS, parseReply, type ReplyPart } from './messageFormat'
 import { AIError, streamChat } from './openai'
 import type { ChatTurn, ContentPart } from './provider'
@@ -233,28 +233,10 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
       visionNote = `表情包识别不可用：${vs.reason}`
     }
 
-    // 长期记忆：用户在聊天中明确要求「记住」的话，原样保存（敏感内容先等用户确认）
+    // 长期记忆：用户在聊天中明确要求「记住」的话，原样保存（敏感内容先等用户确认；重复的只合并依据；可在记忆页关闭）
     let memories = await loadMemories(character.id)
-    const requested = proposeFromRequests(history, memories)
-    if (requested.length) {
-      const now = Date.now()
-      const rows: Memory[] = requested.map((p) => ({
-        id: uid('mem'),
-        characterId: character.id,
-        kind: p.kind,
-        content: p.content,
-        sourceMessageIds: p.sourceMessageIds,
-        quote: p.quote,
-        origin: p.origin,
-        sensitive: p.sensitive,
-        status: p.sensitive ? 'pending' : 'active',
-        priority: 2,
-        createdAt: now,
-        updatedAt: now,
-      }))
-      await db.memories.bulkAdd(rows)
-      memories = [...memories, ...rows]
-    }
+    await saveRememberRequests(character, history, memories)
+    memories = await loadMemories(character.id)
     const ctx = buildContext({ character, userName: profile.nickname, world, lorebooks: books, history, stickers, analyses, memories })
     if (ctx.usedMemoryIds.length) void db.memories.where('id').anyOf(ctx.usedMemoryIds).modify({ lastUsedAt: Date.now() })
     // 聊天模型本身支持图片时：把最新发来的表情包原图也一起交给它（官方多模态格式）
@@ -302,6 +284,8 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
     await deliver()
     if (delivered === 0) throw new AIError('模型没有返回可以显示的内容，请重试或更换模型', 'empty')
     set(convId, visionNote ? { ...IDLE, visionNote } : IDLE)
+    // 用户开启并同意了自动提取时：在后台整理一次记忆候选（只进入「待确认」，不影响这次回复）
+    if (!regenerateFamily) void maybeAutoExtract(character.id, convId).catch(() => {})
   } catch (e) {
     const err = e instanceof AIError ? e : new AIError(e instanceof Error ? e.message : String(e), 'other')
     set(convId, { status: 'error', partial: '', error: err.message, errorKind: err.kind, regenerating: delivered > 0 ? undefined : regenerateFamily })
