@@ -347,7 +347,7 @@ export default function ChatPage() {
   if (conv === null || (conv && character === null)) {
     return (
       <div className="h-dvh flex flex-col">
-        <NavBar title="聊天" back="/" />
+        <NavBar title="聊天" back="/messages" />
         <div className="p-10 text-center text-sm text-[var(--c-text-3)]">
           {conv === null ? '会话不存在或已被删除' : '该角色已被删除'}
         </div>
@@ -381,7 +381,7 @@ export default function ChatPage() {
       {/* 顶部：轻盈的冰晶玻璃胶囊 */}
       <header className="shrink-0 relative z-10 px-5" style={{ paddingTop: 'calc(var(--safe-top) + 8px)' }}>
         <div className="ice relative h-[46px] rounded-full flex items-center px-1.5">
-          <button aria-label="返回" onClick={() => nav('/')} className="press h-11 w-11 flex items-center justify-center">
+          <button aria-label="返回" onClick={() => nav('/messages')} className="press h-11 w-11 flex items-center justify-center">
             <span className="ice-hi h-[27px] w-[27px] rounded-full flex items-center justify-center text-[#56678a]">
               <Icon name="back" size="sm" stroke="thin" />
             </span>

@@ -4,6 +4,9 @@ import TabBar from './components/TabBar'
 import Wallpaper from './components/Wallpaper'
 import { ensureDefaults } from './db/db'
 import MessagesPage from './pages/MessagesPage'
+import DesktopPage from './pages/DesktopPage'
+import ComingSoonPage from './pages/ComingSoonPage'
+import MemoriesHubPage from './pages/MemoriesHubPage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
 import MomentComposePage from './pages/MomentComposePage'
@@ -46,8 +49,12 @@ export default function App() {
     <>
     <Wallpaper />
     <Routes>
+      {/* 首页是虚拟手机桌面；原来的四个页面仍然在原地址（消息改为 /messages），底部导航多了「桌面」 */}
+      <Route index element={<DesktopPage />} />
+      <Route path="app/:id" element={<ComingSoonPage />} />
+      <Route path="memories" element={<MemoriesHubPage />} />
       <Route element={<TabLayout />}>
-        <Route index element={<MessagesPage />} />
+        <Route path="messages" element={<MessagesPage />} />
         <Route path="contacts" element={<ContactsPage />} />
         <Route path="moments" element={<MomentsPage />} />
         <Route path="me" element={<MePage />} />
@@ -73,7 +80,9 @@ export default function App() {
       <Route path="world/new" element={<WorldEditPage />} />
       <Route path="world/:id" element={<WorldDetailPage />} />
       <Route path="world/:id/edit" element={<WorldEditPage />} />
-      <Route path="*" element={<MessagesPage />} />
+      {/* 旧版「消息」页的地址曾经是首页；未知地址回到桌面 */}
+      <Route path="desktop" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>
   )
