@@ -23,6 +23,8 @@ interface Props {
   onCommented?: (m: Moment, c: MomentComment) => void
   /** 删除了自己的评论（页面据此提供撤销） */
   onCommentDeleted?: (m: Moment, c: MomentComment) => void
+  /** 正在进行的角色操作说明（例如「沈遥正在回复…」） */
+  busyNote?: string
 }
 
 function Grid({ images, onOpen }: { images: string[]; onOpen: (i: number) => void }) {
@@ -46,7 +48,7 @@ function Grid({ images, onOpen }: { images: string[]; onOpen: (i: number) => voi
   )
 }
 
-export default function MomentCard({ m, actor, onDelete, onOpenImage, onError, onCommented, onCommentDeleted }: Props) {
+export default function MomentCard({ m, actor, onDelete, onOpenImage, onError, onCommented, onCommentDeleted, busyNote }: Props) {
   const [composing, setComposing] = useState(false)
   const [replyTo, setReplyTo] = useState<MomentActor | undefined>()
   const [text, setText] = useState('')
@@ -130,6 +132,8 @@ export default function MomentCard({ m, actor, onDelete, onOpenImage, onError, o
               ))}
             </div>
           )}
+
+          {busyNote && <div className="mt-1.5 text-[11.5px] text-[var(--c-text-3)]">{busyNote}</div>}
 
           {composing && (
             <div className="mt-2 flex items-end gap-2">

@@ -108,6 +108,20 @@ export default function CharacterProfilePage() {
           </button>
         </Section>
 
+        <Section title="朋友圈">
+          <label className="w-full flex items-center justify-between gap-3 px-4 py-3 text-[14px]">
+            <span>
+              参与朋友圈
+              <span className="block text-[11.5px] text-[var(--c-text-3)]">开启后可以让 TA 发动态、给你的动态点赞评论、回复你的评论。每次都由你的操作触发，会向你配置的 AI 服务发送一次请求</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={c.permissions?.postMoments !== false}
+              onChange={(e) => void db.characters.update(c.id, { permissions: { useStickers: c.permissions?.useStickers !== false, postMoments: e.target.checked } })}
+            />
+          </label>
+        </Section>
+
         <Section title="设定">
           <Block label="与你的关系" text={c.relationToUser} />
           <Block label="性格设定" text={c.personality} />

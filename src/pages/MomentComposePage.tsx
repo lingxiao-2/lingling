@@ -13,6 +13,7 @@ import type { Character, Moment } from '../db/schema'
 import { createMoment } from '../db/momentRepo'
 import { imageToMomentPhoto } from '../lib/util'
 import { MOMENT_LIMITS } from '../services/moments'
+import { canJoinMoments, MAX_REACTORS, reactToMoment } from '../services/ai/momentEngine'
 import { ImageViewer } from './MomentsPage'
 
 const DRAFT_KEY = 'lingling-moment-draft'
@@ -44,6 +45,7 @@ export default function MomentComposePage() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [viewer, setViewer] = useState<number | null>(null)
+  const [reactors, setReactors] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => writeDraft(text), [text])
@@ -71,8 +73,11 @@ export default function MomentComposePage() {
     setErr('')
     setBusy(true)
     try {
-      await createMoment({ content: text, images, visibility, visibleTo: picked })
+      const m = await createMoment({ content: text, images, visibility, visibleTo: picked })
       writeDraft('')
+      // 用户选择了请角色来互动：发布后在后台进行，结果直接出现在动态下面
+      const who = reactors.filter((id) => eligible.some((c) => c.id === id))
+      if (who.length) void reactToMoment(m.id, who)
       nav('/moments', { replace: true })
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -81,6 +86,8 @@ export default function MomentComposePage() {
     }
   }
 
+  // 能看到这条动态、并开启了参与朋友圈的角色
+  const eligible = chars.filter((c) => canJoinMoments(c) && (visibility === 'all' || (visibility === 'some' && picked.includes(c.id))))
   const canPublish = !busy && (text.trim() || images.length) && (visibility !== 'some' || picked.length)
 
   return (
@@ -152,6 +159,28 @@ export default function MomentComposePage() {
             </div>
           )}
         </section>
+        {visibility !== 'private' && eligible.length > 0 && (
+          <section className="mt-3 glass rounded-[var(--radius-card)] px-4 py-3">
+            <div className="serif-zh text-[15px] text-[var(--c-brand)]">请角色来看看（可选）</div>
+            <p className="mt-1 text-[11.5px] text-[var(--c-text-3)]">
+              选中的角色会按自己的性格决定要不要点赞、评论。每个角色向你配置的 AI 服务发送一次请求，最多 {MAX_REACTORS} 个。角色看不到图片内容，不会假装看到。
+            </p>
+            <div className="mt-1.5 space-y-1">
+              {eligible.map((c) => (
+                <label key={c.id} className="flex items-center gap-2.5 py-1 text-[14px]">
+                  <input
+                    type="checkbox"
+                    checked={reactors.includes(c.id)}
+                    disabled={!reactors.includes(c.id) && reactors.length >= MAX_REACTORS}
+                    onChange={(e) => setReactors((x) => (e.target.checked ? [...x, c.id] : x.filter((y) => y !== c.id)))}
+                  />
+                  <Avatar name={c.name} src={c.avatar} size="picker" />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+          </section>
+        )}
         {err && <p className="mt-3 text-[12.5px] text-[var(--c-danger)]">{err}</p>}
       </div>
       {viewer !== null && <ImageViewer images={images} index={viewer} onClose={() => setViewer(null)} />}
