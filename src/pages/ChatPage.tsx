@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Icon } from '../theme/icons'
 import { db } from '../db/db'
@@ -128,6 +128,10 @@ const WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 export default function ChatPage() {
   const { convId = '' } = useParams()
+  // 从搜索结果进入：定位到那条消息并短暂高亮
+  const [params] = useSearchParams()
+  const focusId = params.get('m')
+  const [flash, setFlash] = useState<string | null>(null)
   const nav = useNavigate()
   const profile = useProfile()
   const theme = useThemeSettings()
@@ -232,6 +236,19 @@ export default function ChatPage() {
     if (reply.visionNote) showToast(reply.visionNote)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reply.visionNote])
+
+  const focused = useRef(false)
+  useEffect(() => {
+    if (!focusId || focused.current) return
+    const el = document.getElementById(`msg-${focusId}`)
+    if (!el) return
+    focused.current = true
+    stickNext.current = false
+    requestAnimationFrame(() => el.scrollIntoView({ block: 'center' }))
+    setFlash(focusId)
+    const t = setTimeout(() => setFlash(null), 2200)
+    return () => clearTimeout(t)
+  })
 
   /* ---- 已读 ---- */
   useEffect(() => {
@@ -428,7 +445,12 @@ export default function ChatPage() {
             const showAvatar = !prev || prev.senderType !== m.senderType || m.createdAt - prev.createdAt > GAP_MS
             return (
               // 同一方连续发出的几条靠得更近，像一组消息
-              <div key={m.id} className="flex flex-col gap-[18px]" style={showAvatar ? undefined : { marginTop: -10 }}>
+              <div
+                key={m.id}
+                id={`msg-${m.id}`}
+                className={`flex flex-col gap-[18px] transition-colors duration-700 ${flash === m.id ? 'bg-white/45 rounded-[14px]' : ''}`}
+                style={showAvatar ? undefined : { marginTop: -10 }}
+              >
                 {prev && m.createdAt - prev.createdAt > GAP_MS && (
                   <div className="flex justify-center">
                     <span className="ice date-tag tabular-nums" style={{ fontFamily: 'inherit' }}>{formatChatTime(m.createdAt)}</span>

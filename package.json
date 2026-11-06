@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
-    "test": "tsx --test scripts/test-import.ts scripts/test-files.ts scripts/test-db.ts scripts/test-ai.ts scripts/test-service.ts scripts/test-reply.ts scripts/test-natural.ts scripts/test-persona.ts scripts/test-stickers.ts"
+    "test": "tsx --test scripts/test-*.ts"
   },
   "dependencies": {
     "dexie": "^4.0.11",
