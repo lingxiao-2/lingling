@@ -466,7 +466,7 @@ export default function ImportPage() {
         return nav(`/world/${targetWorld.id}`, { replace: true })
       }
       if (result.characterIds.length === 1 && result.lorebookIds.length <= 1) {
-        return nav(`/character/${result.characterIds[0]}`, { replace: true })
+        return nav(`/character/${result.characterIds[0]}?organize=1`, { replace: true })
       }
       if (result.characterIds.length === 0 && result.lorebookIds.length === 1) {
         return nav(`/lorebook/${result.lorebookIds[0]}`, { replace: true })

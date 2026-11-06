@@ -58,6 +58,8 @@ export interface Character {
   extensions?: Record<string, unknown>
   /** 导入来源（V2 起） */
   importSource?: ImportSource
+  /** 资料整理结果（AI 或规则，用户确认后保存；原文不变），见 services/ai/organize.ts */
+  organized?: OrganizedProfile
   createdAt: number
   updatedAt: number
 }
@@ -66,6 +68,31 @@ export interface ImportSource {
   fileName: string
   format: string
   importedAt: number
+}
+
+export type OrganizeCategory = 'identity' | 'personality' | 'speech' | 'habits' | 'background' | 'relation' | 'shared' | 'others' | 'special' | 'examples'
+
+export interface OrganizedItem {
+  cat: OrganizeCategory
+  /** 简短要点 */
+  point: string
+  /** 支撑这条要点的原文片段（已核对确实出现在原文中） */
+  quote: string
+}
+
+export interface OrganizedProfile {
+  method: 'ai' | 'rule'
+  /** AI 整理时使用的模型 */
+  model?: string
+  createdAt: number
+  sourceChars: number
+  /** 超出整理上限、没有整理的原文字数（原文仍完整保留） */
+  skippedChars: number
+  items: OrganizedItem[]
+  /** 原文中前后矛盾的设定（保留双方原文） */
+  conflicts: { topic: string; quotes: string[] }[]
+  /** 因无法在原文中核对而丢弃的条数 */
+  dropped: number
 }
 
 /* ---------- 会话与消息 ---------- */

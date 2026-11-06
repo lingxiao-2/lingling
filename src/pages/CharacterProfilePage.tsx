@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import NavBar, { NavButton } from '../components/NavBar'
 import Avatar from '../components/Avatar'
+import OrganizeCard from '../components/OrganizeCard'
 import { ConfirmDialog } from '../components/Sheet'
 import PickerSheet from '../components/PickerSheet'
 import { PrimaryButton, Section } from '../components/ui'
@@ -26,6 +27,7 @@ function Block({ label, text }: { label: string; text: string }) {
 export default function CharacterProfilePage() {
   const { id = '' } = useParams()
   const nav = useNavigate()
+  const [params] = useSearchParams()
   const c = useLiveQuery(async () => (await db.characters.get(id)) ?? null, [id])
   const [confirmDel, setConfirmDel] = useState(false)
   const [picker, setPicker] = useState(false)
@@ -107,6 +109,8 @@ export default function CharacterProfilePage() {
             当前资料共 {characterTextChars(c).toLocaleString()} 字；聊天时核心设定每次发送，较长的部分按话题挑选相关段落发送。
           </div>
         )}
+
+        <OrganizeCard c={c} autoOpen={params.get('organize') === '1' && !!c.sourceDoc} />
 
         {(c.greeting || c.exampleDialogue) && (
           <Section title="开场白与示例对话（仅作设定，不是聊天记录）">

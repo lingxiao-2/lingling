@@ -11,6 +11,7 @@ import type { ChatTurn } from './provider'
 import { renderAssistantTurn, type ReplyPart } from './messageFormat'
 import { formatSection, stickerFrequency, styleSection, type StickerOption } from './style'
 import { layerProfile, pickRelated } from './profile'
+import { organizedSection } from './organize'
 
 /** 一次最多向模型提供多少个表情包（控制 Token） */
 export const MAX_OFFERED_STICKERS = 24
@@ -180,6 +181,8 @@ export function buildContext(input: ContextInput): BuiltContext {
   field('背景故事', m(layered.core.backstory))
   field(`与${user}的关系`, m(layered.core.relationToUser))
   for (const e of layered.coreExtras) field(e.label, m(e.text))
+  const org = organizedSection(c.organized)
+  if (org) parts.push(m(org))
   if (related.length) {
     parts.push(`【与当前话题相关的角色资料】（节选，供参考）\n${related.map((r) => `· ${r.label}：${m(r.text)}`).join('\n')}`)
   }
