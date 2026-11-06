@@ -1,3 +1,4 @@
+import { detectRelationship, relationSources } from '../services/ai/relationship'
 import { db, ensureDefaults } from './db'
 import { DEFAULT_WORLD_ID } from './schema'
 import type {
@@ -385,6 +386,11 @@ export async function saveImport(
         permissions: { useStickers: true, postMoments: true },
         createdAt: now,
         updatedAt: now,
+      }
+      // 已有关系：导入时按原文识别并保存依据（识别不到就不保存，之后仍可在资料页手动设置）
+      if (!c.relationship) {
+        const r = detectRelationship(relationSources(c), now)
+        if (r.status !== 'unknown') c.relationship = r
       }
       await db.characters.add(c)
       // 读回核对：保存后的文字明显少于预览中的内容，说明写入出了问题——回滚整个导入，不显示成功

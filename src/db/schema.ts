@@ -54,11 +54,33 @@ export interface Character {
   sourceDoc?: { fileName: string; text: string; chars: number; paragraphs?: number }
   /** 聊天表达偏好（可选） */
   chatStyle?: ChatStyle
+  /** 与用户的已有关系（自动识别或用户确认）；没有时按人设实时识别，见 services/ai/relationship.ts */
+  relationship?: Relationship
   /** 导入时无法映射的原始字段，原样保留（V2 起） */
   extensions?: Record<string, unknown>
   /** 导入来源（V2 起） */
   importSource?: ImportSource
   createdAt: number
+  updatedAt: number
+}
+
+export type RelationshipStatus = 'lover' | 'married' | 'friend' | 'ambiguous' | 'stranger' | 'custom' | 'unknown'
+
+export interface Relationship {
+  status: RelationshipStatus
+  /** status = custom 时的名称，例如「师徒」「契约关系」 */
+  customLabel?: string
+  /** 自定义关系的补充说明（用户填写） */
+  customNote?: string
+  /** 原文依据（摘句，不改写） */
+  evidence: { quote: string; source: string }[]
+  nicknames: { forUser: string[]; forChar: string[] }
+  /** 原文中的共同经历（摘句） */
+  sharedHistory: string[]
+  /** 原文中的相处习惯（摘句） */
+  habits: string[]
+  /** auto：自动识别；user：用户确认或修改过（不会再被自动覆盖） */
+  source: 'auto' | 'user'
   updatedAt: number
 }
 

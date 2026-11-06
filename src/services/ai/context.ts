@@ -11,6 +11,7 @@ import type { ChatTurn } from './provider'
 import { renderAssistantTurn, type ReplyPart } from './messageFormat'
 import { formatSection, stickerFrequency, styleSection, type StickerOption } from './style'
 import { layerProfile, pickRelated } from './profile'
+import { effectiveRelationship, relationshipSection } from './relationship'
 
 /** 一次最多向模型提供多少个表情包（控制 Token） */
 export const MAX_OFFERED_STICKERS = 24
@@ -180,6 +181,10 @@ export function buildContext(input: ContextInput): BuiltContext {
   field('背景故事', m(layered.core.backstory))
   field(`与${user}的关系`, m(layered.core.relationToUser))
   for (const e of layered.coreExtras) field(e.label, m(e.text))
+  // 已有关系：每次都发送，保证从第一句话起延续、长期聊天不「失忆」
+  const rel = effectiveRelationship(c)
+  const relText = relationshipSection(rel, user)
+  if (relText) parts.push(m(relText))
   if (related.length) {
     parts.push(`【与当前话题相关的角色资料】（节选，供参考）\n${related.map((r) => `· ${r.label}：${m(r.text)}`).join('\n')}`)
   }
@@ -195,7 +200,7 @@ export function buildContext(input: ContextInput): BuiltContext {
     parts.push(`【说话示例】（仅用于参考语气，不是你们真实发生过的对话，不要当作记忆）\n${clip(m(c.exampleDialogue), 1500)}`)
   }
   const exchanges = active.filter((x) => x.senderType === 'user').length
-  parts.push(styleSection(c, exchanges, user))
+  parts.push(styleSection(c, exchanges, user, rel.status))
   const freq = stickerFrequency(c)
   const analyses = input.analyses ?? new Map<string, StickerAnalysis>()
   const offered = freq === 'never' ? { options: [], map: new Map<string, string>() } : offeredStickers(input.stickers ?? [], analyses, recent)
