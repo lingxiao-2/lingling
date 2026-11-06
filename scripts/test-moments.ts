@@ -2,6 +2,7 @@
 import 'fake-indexeddb/auto'
 import { test, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { DB_SCHEMA_VERSION } from '../src/db/schema'
 import { db } from '../src/db/db'
 import type { Moment } from '../src/db/schema'
 import { addComment, createMoment, deleteComment, deleteMoment, restoreMoment, toggleLike } from '../src/db/momentRepo'
@@ -98,7 +99,7 @@ test('旧版本留下的动态（没有新字段）可以正常显示和互动�
   assert.equal(m.likes!.length, 1)
   await addComment('old', USER_ACTOR, '补一句')
   assert.equal(visibleComments((await db.moments.get('old'))!).length, 1)
-  assert.equal(db.verno, 4)
+  assert.equal(db.verno, DB_SCHEMA_VERSION)
 })
 
 test('备份往返：动态、配图、点赞评论、可见范围都能恢复', async () => {

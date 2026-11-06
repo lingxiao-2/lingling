@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 4
+export const DB_SCHEMA_VERSION = 5
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -433,6 +433,48 @@ export interface AIConfig {
   maxTokens: number
 }
 
+/* ---------- 生活应用：相册（v5） ---------- */
+export interface Album {
+  id: string
+  name: string
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * 照片的信息（不含原图）。缩略图是小尺寸 JPEG dataURL，直接放在这里，列表滚动时不用读原图。
+ * 原图单独存在 photoBlobs 表（Blob），只在查看大图时读取。照片只保存在本机，不会自动上传。
+ */
+export interface Photo {
+  id: string
+  /** 所在相册；为空表示只在「全部照片」中 */
+  albumId?: string
+  /** 名称（默认是导入时的文件名，可修改） */
+  name: string
+  note: string
+  /** 保存的显示图尺寸 */
+  width: number
+  height: number
+  /** 保存的显示图格式与大小 */
+  mime: string
+  bytes: number
+  /** 导入时原文件的大小与类型（用于说明） */
+  originalBytes: number
+  originalType: string
+  /** 缩略图 dataURL（最长边约 360px） */
+  thumb: string
+  /** 导入（上传到本机）的时间 */
+  createdAt: number
+  updatedAt: number
+  /** 移到「最近删除」的时间；为空表示正常 */
+  deletedAt?: number
+}
+
+export interface PhotoBlob {
+  id: string
+  blob: Blob
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -448,6 +490,9 @@ export class LinglingDB extends Dexie {
   lorebooks!: Table<Lorebook, string>
   characterLorebooks!: Table<CharacterLorebookLink, string>
   worldLorebooks!: Table<WorldLorebookLink, string>
+  albums!: Table<Album, string>
+  photos!: Table<Photo, string>
+  photoBlobs!: Table<PhotoBlob, string>
 
   constructor() {
     super('lingling-ai')
@@ -494,5 +539,11 @@ export class LinglingDB extends Dexie {
           await stickers.put({ ...rest, thumbUrl: (s as Sticker).thumbUrl || legacy, aiUsable: rest.aiUsable ?? true })
         }
       })
+    // v5：生活应用「相册」。只新增三张表，不修改、不删除已有的表和数据，因此不需要 upgrade()。
+    this.version(5).stores({
+      albums: 'id, name, createdAt',
+      photos: 'id, albumId, createdAt, deletedAt',
+      photoBlobs: 'id',
+    })
   }
 }
