@@ -89,8 +89,8 @@ test('注册表：名称唯一且合法；缺说明、参数定义不合法、�
   assert.equal(fromWireName(spec.function.name), 'test.echo')
   assert.equal(wireName('calendar.list_events'), 'calendar__list_events')
   assert.equal((spec.function.parameters as { additionalProperties: boolean }).additionalProperties, false)
-  // 真实应用的注册表：本 PR 没有注册任何涉及个人数据的工具
-  assert.ok(toolRegistry.list().every((d) => d.permission === null))
+  // 真实应用的注册表：涉及个人数据的工具都必须声明权限（没有权限要求的工具只能是测试工具）
+  assert.ok(toolRegistry.list().every((d) => d.permission !== null || d.name.startsWith('test.')))
 })
 
 test('协议：流式 tool_calls 按 index 拼接（参数分多段到达）；普通 JSON 响应同样解析；缺 id 的补上', () => {
