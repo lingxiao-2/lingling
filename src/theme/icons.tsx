@@ -39,6 +39,8 @@ import {
   Trash2,
   UserRound,
   Users,
+  ExternalLink,
+  ClipboardPaste,
 } from 'lucide-react'
 import { ICON, type IconSize, type IconStroke } from './tokens'
 
@@ -78,6 +80,8 @@ const REGISTRY = {
   add: CirclePlus,
   emoji: Smile,
   voice: Mic,
+  external: ExternalLink,
+  paste: ClipboardPaste,
   // 实体
   character: UserRound,
   people: Users,
