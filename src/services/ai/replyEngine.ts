@@ -16,6 +16,9 @@ import { uid } from '../../lib/util'
 import { buildContext } from './context'
 import { capParts, MAX_PARTS, parseReply, type ReplyPart } from './messageFormat'
 import { AIError, streamChat } from './openai'
+import type { ChatTurn, ContentPart } from './provider'
+import { analysesFor, analyzeSticker, visionStatus } from '../vision/stickerVision'
+import { getStickerImage } from '../../db/stickerRepo'
 
 export type ReplyStatus = 'idle' | 'waiting' | 'generating' | 'error'
 
@@ -29,6 +32,10 @@ export interface ReplyState {
   errorKind?: AIError['kind']
   /** 正在重新生成的版本家族 */
   regenerating?: string
+  /** vision：正在看用户发来的表情包 */
+  phase?: 'vision'
+  /** 识图没有成功时的说明（不影响回复，回复会按「没看懂图片」处理） */
+  visionNote?: string
 }
 
 const IDLE: ReplyState = { status: 'idle', partial: '' }
@@ -151,6 +158,7 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
   let wake: () => void = () => {}
   let pump: Promise<void> = Promise.resolve()
   let save: ((part: ReplyPart, index: number) => Promise<void>) | null = null
+  let visionNote: string | undefined
   flushers.set(convId, () => {
     flushing = true
     wake()
@@ -204,7 +212,35 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
     }
     if (!history.some((m) => m.senderType === 'user' && !m.deleted)) return set(convId, IDLE)
 
-    const ctx = buildContext({ character, userName: profile.nickname, world, lorebooks: books, history, stickers })
+    // 用户最近发来的表情包：识图开启时先看懂它（同一张图只识别一次）；失败不阻塞回复，也不编造结果
+    const analyses = await analysesFor(stickers)
+    const lastUserStickers = recentUserStickers(history, stickers)
+    const vs = lastUserStickers.length ? await visionStatus() : null
+    if (vs?.ok) {
+      const pending = lastUserStickers.filter((st) => !(st.hash && analyses.get(st.hash)?.status === 'done'))
+      if (pending.length) {
+        set(convId, { status: 'generating', partial: '', delivered: 0, regenerating: regenerateFamily, phase: 'vision' })
+        for (const st of pending.slice(0, 3)) {
+          try {
+            const a = await analyzeSticker(st, { signal: ctrl.signal })
+            if (a) analyses.set(a.hash, a)
+            if (a?.status === 'failed') visionNote = `表情包没有识别成功：${a.error ?? '未知原因'}`
+          } catch (e) {
+            if ((e as AIError)?.kind === 'aborted') throw e
+            visionNote = `表情包没有识别成功：${e instanceof Error ? e.message : String(e)}`
+          }
+        }
+        set(convId, { status: 'generating', partial: '', delivered: 0, regenerating: regenerateFamily })
+      }
+    } else if (vs && !vs.ok && vs.vision.enabled) {
+      visionNote = `表情包识别不可用：${vs.reason}`
+    }
+
+    const ctx = buildContext({ character, userName: profile.nickname, world, lorebooks: books, history, stickers, analyses })
+    // 聊天模型本身支持图片时：把最新发来的表情包原图也一起交给它（官方多模态格式）
+    if (vs?.ok && vs.vision.mode === 'chat' && vs.vision.attachToChat && lastUserStickers.length) {
+      await attachStickerImages(ctx.messages, lastUserStickers.slice(-2))
+    }
     const stickerNames = new Map(stickers.map((st) => [st.id, st.name.trim()]))
     save = (part, index) => savePart({ convId, runId, index, part, characterId: character.id, model: config.model, family: regenerateFamily, stickerName: stickerNames.get(part.type === 'sticker' ? part.stickerId : '') })
 
@@ -245,7 +281,7 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
     publish()
     await deliver()
     if (delivered === 0) throw new AIError('模型没有返回可以显示的内容，请重试或更换模型', 'empty')
-    set(convId, IDLE)
+    set(convId, visionNote ? { ...IDLE, visionNote } : IDLE)
   } catch (e) {
     const err = e instanceof AIError ? e : new AIError(e instanceof Error ? e.message : String(e), 'other')
     set(convId, { status: 'error', partial: '', error: err.message, errorKind: err.kind, regenerating: delivered > 0 ? undefined : regenerateFamily })
@@ -333,4 +369,39 @@ export async function switchVersion(convId: string, family: string, step: -1 | 1
     if (!next) return
     for (const m of msgs) await db.messages.update(m.id, { superseded: m.replyGroupId !== next })
   })
+}
+
+/** 最后一轮用户发言（最近一条 AI 回复之后）里的表情包 */
+export function recentUserStickers(history: Message[], stickers: Sticker[]): Sticker[] {
+  const byId = new Map(stickers.map((s) => [s.id, s]))
+  const out: Sticker[] = []
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i]
+    if (m.deleted || m.superseded) continue
+    if (m.senderType === 'character') break
+    if (m.senderType === 'user' && m.kind === 'sticker') {
+      const st = byId.get(m.stickerId ?? '')
+      if (st && !out.includes(st)) out.unshift(st)
+    }
+  }
+  return out
+}
+
+/** 把表情包原图附加到最后一条用户消息（只用于支持图片输入的聊天模型） */
+async function attachStickerImages(messages: ChatTurn[], stickers: Sticker[]) {
+  const last = [...messages].reverse().find((m) => m.role === 'user')
+  if (!last || typeof last.content !== 'string') return
+  const { renderVisionImage } = await import('../vision/visionImage')
+  const parts: ContentPart[] = [{ type: 'text', text: last.content }]
+  for (const st of stickers) {
+    const url = await getStickerImage(st.id)
+    if (!url) continue
+    try {
+      const img = await renderVisionImage(url)
+      parts.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: 'low' } })
+    } catch {
+      /* 图片处理失败：只发文字描述 */
+    }
+  }
+  if (parts.length > 1) last.content = parts
 }

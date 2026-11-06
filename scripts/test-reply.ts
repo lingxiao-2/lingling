@@ -10,6 +10,7 @@ import { db, setSetting } from '../src/db/db'
 import { createCharacter, getOrCreateSingleConversation, saveImport, sendUserMessage, updateCharacter } from '../src/db/repo'
 import { addSticker, sendUserSticker } from '../src/db/stickerRepo'
 import { LinglingDB } from '../src/db/schema'
+import { setVisionRendererForTesting } from '../src/services/vision/stickerVision'
 import { getDeviceId, normalizeAIConfig } from '../src/services/ai/service'
 import { setServiceUrlForTesting } from '../src/services/ai/serviceConfig'
 import {
@@ -34,7 +35,16 @@ let mode: 'ok' | 'error' | 'slow' | 'cut' = 'ok'
 /** cut 模式：发送到这个字符位置后网络中断 */
 let cutAt = 0
 
+let visionCalls: { url: string; body: { model: string; messages: { content: { type: string }[] }[] } }[] = []
+let visionMode: 'ok' | 'error' = 'ok'
+let visionReply = '{"summary":"一只猫翻白眼","text":"你看我信吗","emotion":"怀疑、阴阳怪气","scenes":["不相信"],"confidence":0.9}'
+
 globalThis.fetch = (async (url: string, init: RequestInit) => {
+  if (url.startsWith('https://vision.test')) {
+    visionCalls.push({ url, body: JSON.parse(String(init.body)) })
+    if (visionMode === 'error') return new Response('{"error":{"message":"invalid api key"}}', { status: 401 })
+    return new Response(JSON.stringify({ choices: [{ message: { content: visionReply } }], usage: { prompt_tokens: 800, completion_tokens: 50 } }), { headers: { 'content-type': 'application/json' } })
+  }
   calls.push({ url, body: JSON.parse(String(init.body)) })
   if (mode === 'error') return new Response('{"error":{"message":"bad key"}}', { status: 401 })
   const enc = new TextEncoder()
@@ -78,6 +88,9 @@ beforeEach(async () => {
   reply = TWO
   mode = 'ok'
   setPaceScaleForTesting(0)
+  visionCalls = []
+  visionMode = 'ok'
+  setVisionRendererForTesting(async () => ({ dataUrl: 'data:image/jpeg;base64,AAAA', coverage: 'static', frames: 1 }))
   setViewing(null)
   await setSetting('ai-config', { mode: 'direct', baseUrl: 'https://api.test/v1', apiKey: 'sk-x', proxyUrl: '', proxyToken: '', model: 'test-model', temperature: 0.7, maxTokens: 200 })
   await setSetting('profile', { nickname: '小雪', signature: '' })
@@ -275,10 +288,12 @@ test('最多 5 条：多出的文字并入第 5 条', async () => {
 })
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+let prepN = 0
+const prep = () => ({ dataUrl: PNG, thumbUrl: PNG, hash: `hash-${++prepN}`, mime: 'image/png' as const, width: 1, height: 1, bytes: 68 })
 
 test('表情包：AI 只能发送已注册的表情包；编造的编号被丢弃', async () => {
-  const happy = await addSticker({ dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68 }, '开心转圈')
-  await addSticker({ dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68 }, '') // 没有含义：不提供给 AI
+  const happy = await addSticker(prep(), '开心转圈')
+  await addSticker(prep(), '') // 没有含义：不提供给 AI
   reply = '<msg>太棒了</msg><sticker id="k1"/><sticker id="k9"/><sticker id="stk_fake"/>'
   await sendUserMessage(convId, '我拿到 offer 了')
   await runReply(convId)
@@ -293,7 +308,7 @@ test('表情包：AI 只能发送已注册的表情包；编造的编号被丢�
 })
 
 test('表情包频率「从不」：不向模型提供表情包，输出中的表情包标记一律丢弃', async () => {
-  await addSticker({ dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68 }, '开心')
+  await addSticker(prep(), '开心')
   await updateCharacter(charId, { ...(await db.characters.get(charId))!, chatStyle: { stickers: 'never' } })
   reply = '<msg>嗯</msg><sticker id="k1"/>'
   await sendUserMessage(convId, '你好')
@@ -304,7 +319,7 @@ test('表情包频率「从不」：不向模型提供表情包，输出中的�
 })
 
 test('用户发送的表情包：保存为表情包消息，并以含义进入上下文', async () => {
-  const st = await addSticker({ dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68 }, '委屈')
+  const st = await addSticker(prep(), '委屈')
   await sendUserSticker(convId, st)
   await runReply(convId)
   const msgs = await active()
@@ -344,7 +359,7 @@ test('同一条回复重复保存只会有一条（ID 由回复 ID + 序号决�
 })
 
 test('「刷新」后（重新打开数据库）消息与表情包仍然存在', async () => {
-  const st = await addSticker({ dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68 }, '晚安')
+  const st = await addSticker(prep(), '晚安')
   await sendUserSticker(convId, st)
   reply = '<msg>晚安</msg><sticker id="k1"/>'
   await runReply(convId)
@@ -353,9 +368,95 @@ test('「刷新」后（重新打开数据库）消息与表情包仍然存在',
   const msgs = (await fresh.messages.where('conversationId').equals(convId).sortBy('createdAt')).filter((m) => !m.deleted && !m.superseded)
   assert.deepEqual(msgs.map((m) => m.kind), ['sticker', 'text', 'sticker'])
   const saved = await fresh.stickers.get(st.id)
-  assert.equal(saved?.dataUrl, PNG)
+  assert.equal(saved?.thumbUrl, PNG)
   assert.equal(saved?.name, '晚安')
+  assert.equal((await fresh.stickerImages.get(st.id))?.dataUrl, PNG)
   fresh.close()
+})
+
+/* ---------------- 表情包 V2：识图与主动斗图 ---------------- */
+
+const VISION = { enabled: true, consentAt: 1, mode: 'separate', baseUrl: 'https://vision.test/v1', apiKey: 'sk-vision', model: 'vl-model', attachToChat: true }
+
+test('识图：用户发来的表情包先识别再回复；同一张图只识别一次；识别结果进入上下文', async () => {
+  await setSetting('vision-config', VISION)
+  const st = await addSticker(prep(), '') // 不填名称
+  await sendUserSticker(convId, st)
+  await runReply(convId)
+  assert.equal(visionCalls.length, 1)
+  assert.equal(visionCalls[0].body.model, 'vl-model')
+  assert.equal(visionCalls[0].body.messages[0].content[1].type, 'image_url')
+  const userTurn = calls[0].body.messages.at(-1)!.content
+  assert.match(userTurn, /一只猫翻白眼；图上文字「你看我信吗」；情绪：怀疑、阴阳怪气/)
+  // 聊天模型只收到文字描述（不是视觉模型），不会被塞进它看不懂的图片
+  assert.equal(typeof userTurn, 'string')
+  const cached = await db.stickerAnalyses.get(st.hash!)
+  assert.equal(cached?.status, 'done')
+  const usage = (await db.settings.get('vision-usage'))?.value as { calls: number; promptTokens: number }
+  assert.equal(usage.calls, 1)
+  assert.equal(usage.promptTokens, 800)
+  // 再发一次同一张：不再识别
+  await sendUserSticker(convId, st)
+  await runReply(convId)
+  assert.equal(visionCalls.length, 1)
+})
+
+test('主动斗图：识别过的表情包（没有名称）可以被 AI 选用，并作为真实图片消息保存；未识别的不会提供', async () => {
+  await setSetting('vision-config', VISION)
+  const known = await addSticker(prep(), '')
+  await addSticker(prep(), '') // 从未识别
+  await db.stickerAnalyses.put({ hash: known.hash!, status: 'done', summary: '小狗拍手', text: '', emotion: '开心、鼓掌', scenes: ['庆祝'], confidence: 0.9, coverage: 'static', frames: 1, model: 'vl', analyzedAt: 1 })
+  reply = '<msg>太好了！</msg><sticker id="k1"/><sticker id="k2"/>'
+  await sendUserMessage(convId, '我考过了')
+  await runReply(convId)
+  assert.match(calls[0].body.messages[0].content, /可用表情包：k1=开心、鼓掌·小狗拍手·适合庆祝$/m)
+  const ai = (await active()).filter((m) => m.senderType === 'character')
+  assert.deepEqual(ai.map((m) => [m.kind, m.stickerId ?? m.content]), [['text', '太好了！'], ['sticker', known.id]])
+  assert.equal(visionCalls.length, 0) // 收藏夹不会被自动上传识别
+})
+
+test('识图失败（密钥无效）：不卡住聊天，回复照常生成，并明确告诉模型没看懂图片', async () => {
+  await setSetting('vision-config', VISION)
+  visionMode = 'error'
+  const st = await addSticker(prep(), '')
+  await sendUserSticker(convId, st)
+  await runReply(convId)
+  assert.equal(getReplyState(convId).status, 'idle')
+  assert.match(getReplyState(convId).visionNote ?? '', /没有识别成功/)
+  assert.match(calls[0].body.messages.at(-1)!.content, /没有识别图片内容.*不要假装/)
+  assert.equal((await active()).filter((m) => m.senderType === 'character').length, 2)
+  assert.equal((await db.stickerAnalyses.get(st.hash!))?.status, 'failed')
+})
+
+test('识图未开启：不发送任何图片，也不编造识别结果', async () => {
+  const st = await addSticker(prep(), '')
+  await sendUserSticker(convId, st)
+  await runReply(convId)
+  assert.equal(visionCalls.length, 0)
+  assert.match(calls[0].body.messages.at(-1)!.content, /没有识别图片内容/)
+})
+
+test('数据库升级（v3 → v4）：旧表情包与聊天记录完整保留，原图移到单独的表', async () => {
+  const { default: Dexie } = await import('dexie')
+  db.close()
+  await Dexie.delete('lingling-ai')
+  const old = new Dexie('lingling-ai')
+  old.version(3).stores({
+    characters: 'id, name, updatedAt, worldId', conversations: 'id, type, pinned, lastMessageAt', messages: 'id, conversationId, createdAt, [conversationId+createdAt]',
+    messageVersions: 'id, messageId', memories: 'id, characterId, status, createdAt', moments: 'id, authorId, createdAt', stickers: 'id, packId', worlds: 'id', settings: 'key',
+    lorebooks: 'id, name, updatedAt', characterLorebooks: 'id, characterId, lorebookId, &[characterId+lorebookId]', worldLorebooks: 'id, worldId, lorebookId, &[worldId+lorebookId]',
+  })
+  await old.open()
+  await old.table('stickers').add({ id: 'stk_old', packId: 'mine', name: '旧的', dataUrl: PNG, mime: 'image/png', width: 1, height: 1, bytes: 68, favorite: true, aiUsable: true, createdAt: 1, updatedAt: 1 })
+  await old.table('messages').add({ id: 'm_old', conversationId: 'v_old', senderType: 'user', senderId: 'user', kind: 'sticker', stickerId: 'stk_old', content: '[表情包] 旧的', status: 'sent', createdAt: 1, updatedAt: 1 })
+  old.close()
+  await db.open()
+  const s = await db.stickers.get('stk_old')
+  assert.equal(s?.thumbUrl, PNG)
+  assert.equal((s as unknown as { dataUrl?: string }).dataUrl, undefined)
+  assert.equal(s?.favorite, true)
+  assert.equal((await db.stickerImages.get('stk_old'))?.dataUrl, PNG)
+  assert.equal((await db.messages.get('m_old'))?.stickerId, 'stk_old')
 })
 
 /* ---------------- 长篇人设 DOCX：导入 → 保存 → 刷新 → 上下文 ---------------- */

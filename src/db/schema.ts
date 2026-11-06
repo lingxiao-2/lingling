@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 3
+export const DB_SCHEMA_VERSION = 4
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -155,26 +155,60 @@ export interface Moment {
 }
 
 /**
- * 表情包：用户自己从相册或文件添加，保存在本机 IndexedDB，不上传到任何服务器。
- * 图片以 dataURL 保存（PNG / JPEG / WebP / GIF，已校验文件头并限制大小）。
+ * 表情包：用户自己从相册、文件或 ZIP 合集添加，保存在本机 IndexedDB，不上传到任何服务器。
+ * 列表只存缩略图；原图（保留 GIF 动画、透明背景、原始比例）单独存在 stickerImages 表，
+ * 图片识别结果按内容哈希单独存在 stickerAnalyses 表。
  */
 export interface Sticker {
   id: string
-  /** 目前只有用户自己的收藏：'mine' */
+  /** 合集：'mine'（相册 / 文件导入）或 ZIP 合集名 */
   packId: string
-  /** 含义 / 描述，例如「开心转圈」。为空时 AI 不会使用它（AI 需要靠描述判断何时合适） */
+  /** 可选的含义；不填也能收藏和发送。AI 主要依靠图片识别结果理解它 */
   name: string
-  dataUrl: string
+  /** 网格用的缩略图（静态，约 160px） */
+  thumbUrl: string
+  /** 原图内容的 SHA-256（去重、识别结果缓存） */
+  hash?: string
   mime: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
   width: number
   height: number
   bytes: number
-  /** 常用：排在最前 */
+  /** 收藏：排在最前 */
   favorite: boolean
-  /** 是否允许 AI 角色使用（需要同时填写含义） */
+  /** 是否允许 AI 角色使用 */
   aiUsable: boolean
+  lastUsedAt?: number
+  useCount?: number
   createdAt: number
   updatedAt: number
+}
+
+/** 表情包原图（与列表分开存，避免打开面板时把所有原图读进内存） */
+export interface StickerImage {
+  id: string
+  dataUrl: string
+}
+
+/** 表情包识别结果（按图片内容哈希缓存，同一张图只识别一次） */
+export interface StickerAnalysis {
+  hash: string
+  status: 'done' | 'failed'
+  /** 内容摘要：人物 / 动物、动作、表情 */
+  summary: string
+  /** 图上的文字（原样） */
+  text: string
+  /** 情绪 / 语气，例如「无语、翻白眼、阴阳怪气」 */
+  emotion: string
+  /** 适合的聊天场景 */
+  scenes: string[]
+  /** 模型自评的可信程度 0–1 */
+  confidence: number
+  /** 理解范围：静态图；动图按关键帧理解；只看了第一帧 */
+  coverage: 'static' | 'keyframes' | 'first-frame'
+  frames: number
+  model: string
+  analyzedAt: number
+  error?: string
 }
 
 /**
@@ -278,6 +312,8 @@ export class LinglingDB extends Dexie {
   memories!: Table<Memory, string>
   moments!: Table<Moment, string>
   stickers!: Table<Sticker, string>
+  stickerImages!: Table<StickerImage, string>
+  stickerAnalyses!: Table<StickerAnalysis, string>
   worlds!: Table<World, string>
   settings!: Table<SettingRow, string>
   lorebooks!: Table<Lorebook, string>
@@ -309,5 +345,25 @@ export class LinglingDB extends Dexie {
       characters: 'id, name, updatedAt, worldId',
       worldLorebooks: 'id, worldId, lorebookId, &[worldId+lorebookId]',
     })
+    // v4：表情包原图与列表分开存放，新增识别结果缓存表。
+    // 迁移：旧表情包的 dataUrl 原样移到 stickerImages，列表里用它作缩略图；不删除任何表情包或聊天记录。
+    this.version(4)
+      .stores({
+        stickers: 'id, packId, hash, createdAt',
+        stickerImages: 'id',
+        stickerAnalyses: 'hash',
+      })
+      .upgrade(async (tx) => {
+        const stickers = tx.table('stickers')
+        const images = tx.table('stickerImages')
+        for (const s of await stickers.toArray()) {
+          const legacy = (s as { dataUrl?: string }).dataUrl
+          if (!legacy) continue
+          await images.put({ id: s.id, dataUrl: legacy })
+          const { dataUrl: _drop, ...rest } = s as Sticker & { dataUrl?: string }
+          void _drop
+          await stickers.put({ ...rest, thumbUrl: (s as Sticker).thumbUrl || legacy, aiUsable: rest.aiUsable ?? true })
+        }
+      })
   }
 }

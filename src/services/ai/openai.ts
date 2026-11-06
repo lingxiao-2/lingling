@@ -68,7 +68,7 @@ export function resolveTarget(c: AIConfig, deviceId = '', serviceUrl = getServic
   }
 }
 
-async function errorFromResponse(res: Response, c: AIConfig): Promise<AIError> {
+export async function errorFromResponse(res: Response, c: AIConfig): Promise<AIError> {
   let detail = ''
   let code = ''
   let resetAt: string | undefined
@@ -108,7 +108,7 @@ async function errorFromResponse(res: Response, c: AIConfig): Promise<AIError> {
   return new AIError(`请求失败（${res.status}）${tail}`, 'other')
 }
 
-function networkError(e: unknown, c: AIConfig): AIError {
+export function networkError(e: unknown, c: AIConfig): AIError {
   if ((e as { name?: string })?.name === 'AbortError') return new AIError('已停止生成', 'aborted')
   if (c.service === 'lingling') return new AIError('暂时连不上聆聆默认服务，请检查网络后重试，或改用自己的 API', 'unavailable')
   return new AIError(

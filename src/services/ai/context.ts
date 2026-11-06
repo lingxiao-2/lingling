@@ -5,7 +5,8 @@
  *  - 已删除、被重新生成替换（superseded）的消息不进入上下文
  *  - 示例对话只作为语气参考，明确告知模型它不是真实发生过的对话
  */
-import type { Character, Lorebook, LoreEntry, Message, Sticker, World } from '../../db/schema'
+import type { Character, Lorebook, LoreEntry, Message, Sticker, StickerAnalysis, World } from '../../db/schema'
+import { describeAnalysis } from '../vision/vision'
 import type { ChatTurn } from './provider'
 import { renderAssistantTurn, type ReplyPart } from './messageFormat'
 import { formatSection, stickerFrequency, styleSection, type StickerOption } from './style'
@@ -37,6 +38,8 @@ export interface ContextInput {
   history: Message[]
   /** 用户的表情包收藏（用于提供给 AI 选择，以及把历史中的表情包写进上下文） */
   stickers?: Sticker[]
+  /** 表情包识别结果（按图片哈希） */
+  analyses?: Map<string, StickerAnalysis>
   budget?: Partial<ContextBudget>
 }
 
@@ -51,19 +54,64 @@ export interface BuiltContext {
   stickerMap: Map<string, string>
 }
 
-/** 可以提供给 AI 的表情包：有含义描述、允许 AI 使用；常用的优先 */
-export function offeredStickers(stickers: Sticker[]): { options: StickerOption[]; map: Map<string, string> } {
-  const usable = stickers
-    .filter((s) => s.aiUsable && s.name.trim())
-    .sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.createdAt - a.createdAt)
+/** 两字片段，用于判断表情包与当前话题的相关程度 */
+function grams(t: string): Set<string> {
+  const out = new Set<string>()
+  for (const run of t.match(/[\u4e00-\u9fa5]+/g) ?? []) for (let i = 0; i + 1 < run.length; i++) out.add(run.slice(i, i + 2))
+  for (const w of t.toLowerCase().match(/[a-z]{3,}/g) ?? []) out.add(w)
+  return out
+}
+
+/**
+ * 可以提供给 AI 的表情包：允许 AI 使用，并且有识别结果（或用户自己写的含义）。
+ * 没被识别过、也没有含义的表情包不会提供——AI 不能假装知道它画了什么。
+ * 收藏很多时按与最近聊天的相关程度、是否收藏、使用次数挑出最多 24 个。
+ */
+export function offeredStickers(
+  stickers: Sticker[],
+  analyses: Map<string, StickerAnalysis> = new Map(),
+  recentText = '',
+): { options: StickerOption[]; map: Map<string, string> } {
+  const want = grams(recentText)
+  const known = stickers
+    .map((s) => {
+      const a = s.hash ? analyses.get(s.hash) : undefined
+      const ok = a?.status === 'done' && a.confidence >= 0.3 ? a : undefined
+      const label = s.name.trim()
+        ? s.name.trim().slice(0, 20) + (ok?.text ? `（图上文字「${ok.text.slice(0, 12)}」）` : '')
+        : ok
+          ? [ok.emotion, ok.summary.slice(0, 18), ok.text ? `文字「${ok.text.slice(0, 12)}」` : '', ok.scenes.length ? `适合${ok.scenes.slice(0, 2).join('、')}` : '']
+              .filter(Boolean)
+              .join('·')
+          : ''
+      return { s, label }
+    })
+    .filter((x) => x.s.aiUsable && x.label)
+  const score = (x: { s: Sticker; label: string }) => {
+    let hit = 0
+    if (want.size) for (const g of grams(x.label)) if (want.has(g)) hit++
+    return hit * 3 + (x.s.favorite ? 2 : 0) + Math.min(2, (x.s.useCount ?? 0) / 5)
+  }
+  const picked = known
+    .map((x) => ({ ...x, sc: score(x) }))
+    .sort((a, b) => b.sc - a.sc || b.s.createdAt - a.s.createdAt)
     .slice(0, MAX_OFFERED_STICKERS)
   const map = new Map<string, string>()
-  const options = usable.map((s, i) => {
+  const options = picked.map((x, i) => {
     const alias = `k${i + 1}`
-    map.set(alias, s.id)
-    return { alias, name: s.name.trim().slice(0, 20) }
+    map.set(alias, x.s.id)
+    return { alias, name: x.label.slice(0, 48) }
   })
   return { options, map }
+}
+
+/** 用户发来的表情包在上下文中的写法：有识别结果就写出来；没有就明确告诉模型不要猜 */
+export function userStickerText(s: Sticker | undefined, analyses: Map<string, StickerAnalysis>): string {
+  if (!s) return '[发来一个表情包（已被删除）]'
+  const a = s.hash ? analyses.get(s.hash) : undefined
+  if (a?.status === 'done') return `[发来一个表情包：${describeAnalysis(a)}]`
+  if (s.name.trim()) return `[发来一个表情包：${s.name.trim()}]`
+  return '[发来一个表情包（没有识别图片内容，不清楚画了什么，不要假装知道或描述它）]'
 }
 
 function macros(text: string, char: string, user: string): string {
@@ -149,10 +197,11 @@ export function buildContext(input: ContextInput): BuiltContext {
   const exchanges = active.filter((x) => x.senderType === 'user').length
   parts.push(styleSection(c, exchanges, user))
   const freq = stickerFrequency(c)
-  const offered = freq === 'never' ? { options: [], map: new Map<string, string>() } : offeredStickers(input.stickers ?? [])
+  const analyses = input.analyses ?? new Map<string, StickerAnalysis>()
+  const offered = freq === 'never' ? { options: [], map: new Map<string, string>() } : offeredStickers(input.stickers ?? [], analyses, recent)
   parts.push(formatSection(freq, offered.options))
   parts.push('只依据以上设定和下面真实发生过的聊天内容回应，不要编造你们没有共同经历过的事情；不确定时可以自然地询问。')
-  const stickerName = new Map((input.stickers ?? []).map((st) => [st.id, st.name.trim()]))
+  const stickerById = new Map((input.stickers ?? []).map((st) => [st.id, st]))
   const aliasOf = new Map([...offered.map].map(([a, id]) => [id, a]))
 
   // 聊天历史：从最新往前，直到超出字数预算（至少保留最后一条）
@@ -177,7 +226,7 @@ export function buildContext(input: ContextInput): BuiltContext {
     .map((t): ChatTurn => {
       if (t.role === 'user') {
         const content = t.items
-          .map((x) => (x.kind === 'sticker' ? `[发来一个表情包${stickerName.get(x.stickerId ?? '') ? `：${stickerName.get(x.stickerId ?? '')}` : ''}]` : x.content))
+          .map((x) => (x.kind === 'sticker' ? userStickerText(stickerById.get(x.stickerId ?? ''), analyses) : x.content))
           .join('\n\n')
         return { role: 'user', content }
       }
@@ -186,7 +235,7 @@ export function buildContext(input: ContextInput): BuiltContext {
       )
       return { role: 'assistant', content: renderAssistantTurn(items, (id) => aliasOf.get(id)) }
     })
-    .filter((t) => t.content.trim())
+    .filter((t) => (t.content as string).trim())
     // 去掉空的一轮后，可能出现相邻同一方，再合并一次
     .reduce<ChatTurn[]>((acc, t) => {
       const prev = acc[acc.length - 1]

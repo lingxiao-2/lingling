@@ -6,8 +6,9 @@ import { Icon } from '../theme/icons'
 import { db } from '../db/db'
 import { markRead, saveDraft, sendUserMessage, softDeleteMessage } from '../db/repo'
 import type { Message, Sticker } from '../db/schema'
-import { addSticker, deleteSticker, listStickers, sendUserSticker, updateSticker } from '../db/stickerRepo'
-import { isSafeStickerSrc, prepareSticker, StickerError } from '../services/stickers'
+import { listStickers, sendUserSticker } from '../db/stickerRepo'
+import StickerPanel from '../components/StickerPanel'
+import { StickerPicture } from '../components/StickerView'
 import NavBar from '../components/NavBar'
 import { BOW_SVG, dataUri } from '../assets/winter/ornaments'
 import Avatar from '../components/Avatar'
@@ -103,85 +104,20 @@ function Bubble({ msg, mine, ornament, onMenu }: { msg: Message; mine: boolean; 
   )
 }
 
-/** 表情包消息：直接显示图片（只显示本机保存的图片）；表情包被删除后显示提示 */
+/** 表情包消息：按原始比例显示图片（GIF 正常播放），不加气泡背景；表情包被删除后显示提示 */
 function StickerBubble({ sticker, mine, onMenu }: { sticker?: Sticker; mine: boolean; onMenu: () => void }) {
   const { consumeClick: _c, ...press } = useLongPress(onMenu)
   void _c
-  if (!sticker || !isSafeStickerSrc(sticker.dataUrl)) {
+  if (!sticker) {
     return (
       <div {...press} className={`bubble select-none text-[12px] opacity-70 ${mine ? 'bubble-me' : 'bubble-them'}`}>
         表情包已删除
       </div>
     )
   }
-  const k = Math.min(1, 116 / Math.max(sticker.width, sticker.height))
   return (
     <div {...press} className="select-none" style={{ WebkitTouchCallout: 'none' }}>
-      <img
-        src={sticker.dataUrl}
-        alt={sticker.name || '表情包'}
-        draggable={false}
-        className="block rounded-[12px] drop-shadow-[0_2px_6px_rgba(70,96,140,.18)]"
-        style={{ width: Math.round(sticker.width * k), height: Math.round(sticker.height * k) }}
-      />
-    </div>
-  )
-}
-
-function StickerTile({ sticker, onSend, onMenu }: { sticker: Sticker; onSend: () => void; onMenu: () => void }) {
-  const { consumeClick, ...press } = useLongPress(onMenu)
-  return (
-    <button
-      {...press}
-      onClick={() => {
-        if (!consumeClick()) onSend()
-      }}
-      aria-label={`发送表情包${sticker.name ? `：${sticker.name}` : ''}`}
-      className="press relative aspect-square rounded-[12px] bg-white/35 flex items-center justify-center overflow-hidden select-none"
-      style={{ WebkitTouchCallout: 'none' }}
-    >
-      {isSafeStickerSrc(sticker.dataUrl) && <img src={sticker.dataUrl} alt="" draggable={false} className="max-h-[86%] max-w-[86%] object-contain" />}
-      {sticker.favorite && <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-[var(--c-accent)]" />}
-    </button>
-  )
-}
-
-/** 给表情包写含义：AI 只会使用写了含义的表情包 */
-function StickerNameDialog({ sticker, onClose }: { sticker: Sticker; onClose: () => void }) {
-  const [name, setName] = useState(sticker.name)
-  const save = async () => {
-    await updateSticker(sticker.id, { name })
-    onClose()
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-8" onClick={onClose}>
-      <div className="absolute inset-0 sheet-overlay sheet-fade" />
-      <div className="relative w-full max-w-[320px] card px-5 pt-5 pb-4 sheet-rise" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-3">
-          <img src={sticker.dataUrl} alt="" className="h-14 w-14 object-contain rounded-[10px]" />
-          <div className="min-w-0">
-            <div className="serif-zh text-[15px] text-[var(--c-brand)]">这个表情包的含义</div>
-            <div className="mt-0.5 text-[11.5px] leading-relaxed text-[var(--c-text-3)]">例如「开心转圈」「委屈」。写了含义，角色才知道什么时候可以用它。</div>
-          </div>
-        </div>
-        <input
-          autoFocus
-          value={name}
-          maxLength={20}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && void save()}
-          placeholder="可以不填"
-          className="mt-3.5 w-full rounded-[12px] bg-white/60 border border-[var(--c-line)] px-3 py-2 text-[16px] outline-none focus:border-[var(--c-accent)]"
-        />
-        <div className="mt-3.5 flex justify-end gap-2">
-          <button onClick={onClose} className="press h-8 px-3.5 rounded-full text-[13px] text-[var(--c-text-2)]">
-            取消
-          </button>
-          <button onClick={() => void save()} className="press h-8 px-4 rounded-full bg-[var(--c-accent)] text-white text-[13px]">
-            保存
-          </button>
-        </div>
-      </div>
+      <StickerPicture sticker={sticker} max={120} className="rounded-[10px] drop-shadow-[0_2px_6px_rgba(70,96,140,.18)]" />
     </div>
   )
 }
@@ -232,11 +168,7 @@ export default function ChatPage() {
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [plusOpen, setPlusOpen] = useState(false)
   const [toast, setToast] = useState('')
-  const [panelTab, setPanelTab] = useState<'emoji' | 'sticker'>('emoji')
-  const [stickerMenu, setStickerMenu] = useState<Sticker | null>(null)
-  const [naming, setNaming] = useState<Sticker | null>(null)
-  const [adding, setAdding] = useState(false)
-  const stickerFileRef = useRef<HTMLInputElement>(null)
+  const [panelTab, setPanelTab] = useState<'emoji' | 'sticker'>('sticker')
   const stickers = useLiveQuery(listStickers, [], [] as Sticker[])
   const stickerById = useMemo(() => new Map(stickers.map((st) => [st.id, st])), [stickers])
 
@@ -295,6 +227,12 @@ export default function ChatPage() {
     }
   }, [convId])
 
+  /* ---- 识图没有成功：提示一次（回复照常进行，按「没看懂图片」处理） ---- */
+  useEffect(() => {
+    if (reply.visionNote) showToast(reply.visionNote)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reply.visionNote])
+
   /* ---- 已读 ---- */
   useEffect(() => {
     if (conv && conv.unread > 0) void markRead(convId)
@@ -341,7 +279,7 @@ export default function ChatPage() {
 
   const showToast = (msg: string) => {
     setToast(msg)
-    window.setTimeout(() => setToast(''), 1800)
+    window.setTimeout(() => setToast(''), Math.min(5000, 1800 + msg.length * 40))
   }
 
   /** 在光标处插入表情（普通 Emoji 插入文字输入框） */
@@ -387,20 +325,6 @@ export default function ChatPage() {
       return
     }
     if (!notConfigured) scheduleReply(convId)
-  }
-
-  const pickSticker = async (file?: File) => {
-    if (!file) return
-    setAdding(true)
-    try {
-      const prepared = await prepareSticker(file)
-      const st = await addSticker(prepared)
-      setNaming(st)
-    } catch (e) {
-      showToast(e instanceof StickerError ? e.message : '图片读取失败，请换一张试试')
-    } finally {
-      setAdding(false)
-    }
   }
 
   if (conv === null || (conv && character === null)) {
@@ -558,7 +482,9 @@ export default function ChatPage() {
             <div style={cont ? { marginTop: -10 } : undefined}>
             <Row mine={false} name={title} avatar={character?.avatar} showAvatar={!cont} avatarSize={avatarSize} fontSize={fontSize}>
               <div className="bubble bubble-them whitespace-pre-wrap break-words" aria-live="polite">
-                {reply.partial.length >= 40 ? (
+                {reply.phase === 'vision' ? (
+                  <span className="text-[12px] text-[#6f7f9c]">正在看你发的表情包…</span>
+                ) : reply.partial.length >= 40 ? (
                   reply.partial
                 ) : (
                   <span className="typing-dots" aria-label={`${title}正在输入`}>
@@ -629,7 +555,7 @@ export default function ChatPage() {
                 {t === 'emoji' ? 'Emoji' : '表情包'}
               </button>
             ))}
-            {panelTab === 'sticker' && <span className="ml-auto pr-1 text-[10.5px] text-[#8090ad]">点一下发送 · 长按管理</span>}
+            {panelTab === 'sticker' && <span className="ml-auto pr-1 text-[10.5px] text-[#8090ad]">点一下发送 · 长按预览</span>}
           </div>
           {panelTab === 'emoji' ? (
             <div className="grid grid-cols-8 gap-0.5">
@@ -640,34 +566,8 @@ export default function ChatPage() {
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-5 gap-1.5 max-h-[188px] overflow-y-auto">
-              <button
-                aria-label="添加表情包"
-                disabled={adding}
-                onClick={() => stickerFileRef.current?.click()}
-                className="press aspect-square rounded-[12px] border border-dashed border-[#9fb0cc] flex flex-col items-center justify-center gap-0.5 text-[#6f7f9c] disabled:opacity-50"
-              >
-                <Icon name="plus" size="sm" stroke="thin" />
-                <span className="text-[10px]">{adding ? '处理中' : '添加'}</span>
-              </button>
-              {stickers.map((st) => (
-                <StickerTile key={st.id} sticker={st} onSend={() => void sendSticker(st)} onMenu={() => setStickerMenu(st)} />
-              ))}
-            </div>
+            <StickerPanel onSend={(st) => void sendSticker(st)} toast={showToast} />
           )}
-          {panelTab === 'sticker' && stickers.length === 0 && (
-            <p className="px-1 pt-2 text-[11px] leading-relaxed text-[#7d8cab]">从相册选择 PNG、JPEG、WebP 或 GIF 图片，表情包只保存在这台设备上。</p>
-          )}
-          <input
-            ref={stickerFileRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            className="hidden"
-            onChange={(e) => {
-              void pickSticker(e.target.files?.[0])
-              e.target.value = ''
-            }}
-          />
         </div>
       )}
 
@@ -749,22 +649,7 @@ export default function ChatPage() {
       {menuMsg && (
         <ActionSheet title={menuMsg.content.slice(0, 30)} onClose={() => setMenuMsg(null)} actions={menuActions(menuMsg)} />
       )}
-      {stickerMenu && (
-        <ActionSheet
-          title={stickerMenu.name || '表情包'}
-          subtitle={stickerMenu.name ? (stickerMenu.aiUsable ? '角色可以使用' : '角色不会使用') : '还没有含义，角色不会使用'}
-          onClose={() => setStickerMenu(null)}
-          actions={[
-            { label: stickerMenu.favorite ? '取消常用' : '设为常用', onClick: () => void updateSticker(stickerMenu.id, { favorite: !stickerMenu.favorite }) },
-            { label: stickerMenu.name ? '修改含义' : '填写含义', onClick: () => setNaming(stickerMenu) },
-            ...(stickerMenu.name
-              ? [{ label: stickerMenu.aiUsable ? '不让角色使用' : '允许角色使用', onClick: () => void updateSticker(stickerMenu.id, { aiUsable: !stickerMenu.aiUsable }) }]
-              : []),
-            { label: '删除', danger: true, onClick: () => void deleteSticker(stickerMenu.id) },
-          ]}
-        />
-      )}
-      {naming && <StickerNameDialog sticker={naming} onClose={() => setNaming(null)} />}
+
     </div>
   )
 }
