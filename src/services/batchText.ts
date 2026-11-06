@@ -6,9 +6,9 @@
  *   - 空行忽略；没有 URL 的行标记失败，不影响其他行
  *  链接清洗（不默默改错）：
  *   - 去掉首尾空白、URL 中混入的空格、末尾的中文标点
- *   - 扩展名缺少点号（…/LRiByntjpeg）、扩展名笔误（.peg）：生成「候选链接」，下载时先试修正后的，
- *     失败再试原链接；只有真实下载并解析成功的图片才算成功，并在预览中标明「已自动修正」
- *   - 不改动路径的大小写（服务器通常区分大小写），只在原链接失败时才尝试统一大小写的版本
+ *   - 扩展名缺少点号（…/LRiByntjpeg）、扩展名笔误（.peg）、目录大小写（/V2/）：只生成「建议修正」，
+ *     先按原链接下载；原链接失败时提示可能的修正，用户确认后才尝试（不擅自改动可能有效的链接）
+ *   - ZIP 链接：解压后逐张校验导入
  *  下载与校验：真实请求每个链接，按文件内容判断图片类型，解码生成缩略图，按内容哈希去重。
  */
 import type { PreparedSticker } from './stickers'
@@ -101,17 +101,17 @@ export function parseLine(raw: string, line: number): ParsedLine | null {
     // 没有扩展名：结尾恰好是 jpeg / jpg / png / webp / gif，很可能是漏了点号
     const miss = /^(.{3,}?)(jpeg|jpg|png|webp|gif)$/i.exec(seg)
     if (miss) {
-      candidates.push({ url: withSeg(`${miss[1]}.${miss[2]}`), fix: `疑似缺少点号，已改为「.${miss[2]}」` })
-      warning = `链接结尾「${miss[2]}」前疑似缺少点号，会先尝试「${miss[1]}.${miss[2]}」`
+      candidates.push({ url: withSeg(`${miss[1]}.${miss[2]}`), fix: `补上点号：「${miss[1]}.${miss[2]}」` })
+      warning = `链接结尾「${miss[2]}」前疑似缺少点号，可能应为「${miss[1]}.${miss[2]}」`
     }
     candidates.push({ url: parsed.href })
   } else if (!EXT.test(ext) && /^(peg|jgp|jpe|jepg|jpge|pgn|npg|pnj|wepb|webm?p|gfi|igf)$/i.test(ext)) {
     // 常见笔误：不能确定，先试最可能的写法，再试原链接
     const guess = /^(pn|np|pg)/i.test(ext) ? 'png' : /^w/i.test(ext) ? 'webp' : /^[gi]/i.test(ext) && ext.length === 3 && /f/i.test(ext) ? 'gif' : 'jpeg'
     const base = seg.slice(0, dot)
-    candidates.push({ url: withSeg(`${base}.${guess}`), fix: `扩展名「.${ext}」疑似笔误，已改为「.${guess}」` })
+    candidates.push({ url: withSeg(`${base}.${guess}`), fix: `扩展名「.${ext}」改为「.${guess}」` })
     candidates.push({ url: parsed.href })
-    warning = `扩展名「.${ext}」无法确认是否有效，会先尝试「.${guess}」，再尝试原链接`
+    warning = `扩展名「.${ext}」无法确认是否有效，可能应为「.${guess}」`
   } else {
     candidates.push({ url: parsed.href })
     if (ext && EXT.test(ext) && ext !== ext.toLowerCase()) {
@@ -150,12 +150,18 @@ export interface BatchItem extends ParsedLine {
   /** 成功时使用的修正说明 */
   appliedFix?: string
   prepared?: PreparedSticker
+  /** ZIP 链接：解压出的其余图片（与 prepared 一起导入） */
+  more?: PreparedSticker[]
+  /** 原链接失败、并且有可能的修正时：等待用户确认后再尝试 */
+  suggestFix?: Candidate
 }
 
 export interface BatchDeps {
   fetch: (url: string, signal?: AbortSignal) => Promise<Fetched>
   prepare: (bytes: Uint8Array) => Promise<PreparedSticker>
   existingHashes: Set<string>
+  /** 解压 ZIP，返回其中的图片（不提供时 ZIP 链接会提示用「通过链接导入」） */
+  unzip?: (bytes: Uint8Array) => Promise<Uint8Array[]>
   onUpdate?: (item: BatchItem) => void
   /** 同时下载的数量 */
   concurrency?: number
@@ -192,61 +198,81 @@ function reasonOf(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+/**
+ * 下载并校验一项。默认只试原链接（只做了去空格、去末尾标点这类无歧义的清理）；
+ * 修正扩展名、目录大小写等可能改错的修正，只有用户确认（useFix）后才尝试。
+ */
+export async function fetchItem(it: BatchItem, deps: BatchDeps, seen: Set<string>, useFix = false): Promise<BatchItem> {
+  const emit = () => deps.onUpdate?.({ ...it })
+  it.status = 'fetching'
+  it.reason = undefined
+  emit()
+  const list = it.candidates.filter((c) => (useFix ? !!c.fix : !c.fix))
+  let firstErr: unknown = null
+  for (const c of list) {
+    if (deps.signal?.aborted) break
+    try {
+      const f = await deps.fetch(c.url, deps.signal)
+      if (f.kind === 'html') throw new LinkError('链接打开的是网页，不是图片', 'unsupported')
+      const raws = f.kind === 'zip' ? (deps.unzip ? await deps.unzip(f.bytes) : null) : [f.bytes]
+      if (!raws) throw new LinkError('链接是 ZIP 压缩包，请用「通过链接导入」导入整套', 'unsupported')
+      if (!raws.length) throw new LinkError('压缩包里没有 PNG / JPEG / WebP / GIF 图片', 'unsupported')
+      const fresh: PreparedSticker[] = []
+      let dup = 0
+      let bad = 0
+      for (const b of raws) {
+        let p: PreparedSticker
+        try {
+          p = await deps.prepare(b)
+        } catch (e) {
+          if (raws.length === 1) throw new LinkError(`图片格式不支持或已损坏（${e instanceof Error ? e.message : '无法解析'}）`, 'unsupported')
+          bad++
+          continue
+        }
+        if (seen.has(p.hash)) dup++
+        else {
+          seen.add(p.hash)
+          fresh.push(p)
+        }
+      }
+      it.finalUrl = f.finalUrl || c.url
+      it.appliedFix = c.fix
+      it.suggestFix = undefined
+      if (fresh.length) {
+        it.status = 'ok'
+        it.prepared = fresh[0]
+        it.more = fresh.slice(1)
+        it.reason = f.kind === 'zip' ? `ZIP：${raws.length} 张图片，可导入 ${fresh.length} 张${dup ? `，重复 ${dup} 张` : ''}${bad ? `，无法解析 ${bad} 张` : ''}` : undefined
+      } else {
+        it.status = 'duplicate'
+        it.reason = f.kind === 'zip' ? `ZIP 中的 ${raws.length} 张图片都已存在${bad ? `或无法解析` : ''}` : '该图片已存在'
+      }
+      emit()
+      return it
+    } catch (e) {
+      firstErr ??= e
+    }
+  }
+  it.status = 'failed'
+  const base = reasonOf(firstErr ?? new Error('已取消'))
+  const fix = useFix ? undefined : it.candidates.find((c) => c.fix)
+  it.suggestFix = fix
+  it.reason = useFix ? `修正后仍无效。${base}` : base
+  emit()
+  return it
+}
+
 /** 下载、校验并去重；每一项的结果通过 onUpdate 实时返回。某一项失败不影响其他项 */
 export async function fetchBatch(lines: ParsedLine[], deps: BatchDeps): Promise<BatchItem[]> {
   const items: BatchItem[] = lines.map((l) => ({ ...l, status: l.error ? 'failed' : 'pending', reason: l.error }))
-  const seen = new Set(deps.existingHashes)
+  // 直接使用调用方传入的集合：之后单条重试（确认修正）时仍能正确去重
+  const seen = deps.existingHashes
   const queue = items.filter((i) => i.status === 'pending')
-  const emit = (i: BatchItem) => deps.onUpdate?.({ ...i })
-
-  const work = async (it: BatchItem) => {
-    it.status = 'fetching'
-    emit(it)
-    let lastErr: unknown = null
-    let firstErr: unknown = null
-    for (const c of it.candidates) {
-      if (deps.signal?.aborted) break
-      try {
-        const f = await deps.fetch(c.url, deps.signal)
-        if (f.kind === 'zip') throw new LinkError('链接是 ZIP 压缩包，请用「通过链接导入」导入整套', 'unsupported')
-        if (f.kind !== 'image') throw new LinkError('链接打开的是网页，不是图片', 'unsupported')
-        let p: PreparedSticker
-        try {
-          p = await deps.prepare(f.bytes)
-        } catch (e) {
-          throw new LinkError(`图片格式不支持或已损坏（${e instanceof Error ? e.message : '无法解析'}）`, 'unsupported')
-        }
-        it.finalUrl = f.finalUrl || c.url
-        it.appliedFix = c.fix
-        if (seen.has(p.hash)) {
-          it.status = 'duplicate'
-          it.reason = '该图片已存在'
-        } else {
-          seen.add(p.hash)
-          it.status = 'ok'
-          it.prepared = p
-          it.reason = undefined
-        }
-        emit(it)
-        return
-      } catch (e) {
-        firstErr ??= e
-        lastErr = e
-      }
-    }
-    it.status = 'failed'
-    const tried = it.candidates.length > 1
-    // 优先报告第一个（修正后的）链接的原因；若都失败，说明修正后仍无效
-    const base = reasonOf(firstErr ?? lastErr ?? new Error('已取消'))
-    it.reason = tried && it.candidates[0].fix ? `自动修正后仍无效。${base}` : base
-    emit(it)
-  }
-
   const n = Math.max(1, deps.concurrency ?? 3)
   let next = 0
   await Promise.all(
     Array.from({ length: Math.min(n, queue.length) }, async () => {
-      while (next < queue.length && !deps.signal?.aborted) await work(queue[next++])
+      while (next < queue.length && !deps.signal?.aborted) await fetchItem(queue[next++], deps, seen)
     }),
   )
   return items

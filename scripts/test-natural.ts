@@ -148,7 +148,7 @@ test('上下文：用户发的表情包以含义出现；角色发过的表情�
     history: [m('user', { kind: 'sticker', stickerId: 's1', content: '[表情包] 开心' }), m('character', { content: '你也开心呀' }), m('character', { kind: 'sticker', stickerId: 's1', content: '[表情包] 开心' })],
   })
   assert.deepEqual(ctx.messages.slice(1), [
-    { role: 'user', content: '[发来一个表情包：开心]' },
+    { role: 'user', content: '[发来一个表情包，名称是「开心」（没有识别图片，只知道名称；不要描述画面）]' },
     { role: 'assistant', content: '<msg>你也开心呀</msg>\n<sticker id="k1"/>' },
   ])
   assert.equal(ctx.stickerMap.get('k1'), 's1')

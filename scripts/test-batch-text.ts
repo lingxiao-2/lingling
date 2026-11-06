@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { fetchBatch, parseBatchText, parseLine } from '../src/services/batchText'
+import { fetchBatch, fetchItem, parseBatchText, parseLine } from '../src/services/batchText'
 import { LinkError, type Fetched } from '../src/services/linkImport'
 import type { PreparedSticker } from '../src/services/stickers'
 
@@ -28,7 +28,7 @@ test('异常链接：缺点号、空格、.peg 笔误给出修正候选并保留
   const lines = parseBatchText(SAMPLE)
   const l14 = lines.find((l) => l.line === 14)!
   assert.equal(l14.candidates[0].url, 'https://i.imgant.com/v2/LRiBynt.jpeg')
-  assert.match(l14.candidates[0].fix!, /缺少点号/)
+  assert.match(l14.candidates[0].fix!, /补上点号/)
   assert.equal(l14.candidates[1].url, 'https://i.imgant.com/v2/LRiByntjpeg')
   assert.match(l14.warning!, /缺少点号/)
   const l20 = lines.find((l) => l.line === 20)!
@@ -57,40 +57,67 @@ test('各种分隔方式、空行、无效行', () => {
 
 const prep = async (b: Uint8Array): Promise<PreparedSticker> => ({ hash: `h${b[0]}-${b.length}`, dataUrl: 'data:image/gif;base64,AA', thumbUrl: 'data:image/png;base64,AA', mime: 'image/gif', width: 1, height: 1, bytes: b.length } as PreparedSticker)
 
-test('下载：修正候选先试，成功即标明已修正；都失败时说明修正后仍无效；部分失败不影响其他行；去重', async () => {
+test('下载：默认只试原链接；原链接失败时给出修正建议，用户确认后才用修正链接；部分失败不影响其他行；去重', async () => {
   const lines = parseBatchText(SAMPLE)
   const other = new Uint8Array([...gif, 0, 0])
   const fetched: string[] = []
   const fake = async (url: string): Promise<Fetched> => {
     fetched.push(url)
     if (url.endsWith('LRiBynt.jpeg')) return { kind: 'image', bytes: other, finalUrl: url, contentType: 'image/jpeg' }
+    if (url.endsWith('LRiByntjpeg')) throw new LinkError('链接指向的文件不存在或已被删除', 'notfound')
     if (url.includes('vitpp98')) throw new LinkError('链接指向的文件不存在或已被删除', 'notfound')
     if (url.includes('itpBKTZ')) throw new LinkError('图片可以显示，但这个网站没有允许其他网页读取图片内容（跨域限制 CORS）', 'cors')
     if (url.includes('Df5TH')) return { kind: 'html', bytes: new Uint8Array([60]), finalUrl: url, contentType: 'text/html' }
     return { kind: 'image', bytes: gif, finalUrl: url, contentType: 'image/gif' }
   }
-  const items = await fetchBatch(lines, { fetch: fake, prepare: prep, existingHashes: new Set(), concurrency: 4 })
+  const seen = new Set<string>()
+  const deps = { fetch: fake, prepare: prep, existingHashes: seen, concurrency: 4 }
+  const items = await fetchBatch(lines, deps)
   const at = (n: number) => items.find((i) => i.line === n)!
-  assert.equal(at(14).status, 'ok')
-  assert.match(at(14).appliedFix!, /缺少点号/)
-  assert.equal(at(25).status, 'failed')
-  assert.match(at(25).reason!, /自动修正后仍无效.*链接无法访问/)
+  // 没有擅自修正：第 14 行只试了原链接，失败后给出建议
+  assert.equal(at(14).status, 'failed')
+  assert.ok(!fetched.includes('https://i.imgant.com/v2/LRiBynt.jpeg'))
+  assert.match(at(14).suggestFix!.fix!, /补上点号/)
+  // 用户确认后再试修正
+  const fixed = await fetchItem({ ...at(14) }, deps, seen, true)
+  assert.equal(fixed.status, 'ok')
+  assert.match(fixed.appliedFix!, /补上点号/)
+  const f25 = await fetchItem({ ...at(25) }, deps, seen, true)
+  assert.equal(f25.status, 'failed')
+  assert.match(f25.reason!, /修正后仍无效.*链接无法访问/)
   assert.equal(at(31).status, 'failed')
   assert.match(at(31).reason!, /^跨域限制/)
-  assert.equal(at(9).status, 'failed')
+  assert.equal(at(31).suggestFix, undefined)
   assert.match(at(9).reason!, /不是图片/)
-  // 其余 27 行内容相同（同一张图），只有一张可导入，其他标为重复
-  assert.equal(items.filter((i) => i.status === 'ok').length, 2)
-  assert.equal(items.filter((i) => i.status === 'duplicate').length, 26)
-  assert.ok(items.filter((i) => i.status === 'duplicate').every((i) => i.reason === '该图片已存在'))
-  // 原链接成功时不再尝试修正版本
+  // /V2/ 原链接成功，不会去试小写目录
+  assert.equal(at(2).status === 'ok' || at(2).status === 'duplicate', true)
   assert.ok(!fetched.includes('https://i.imgant.com/v2/K893NeG.jpeg'))
+  // 其余内容相同（同一张图）：一张可导入，其他标为重复
+  assert.equal(items.filter((i) => i.status === 'ok').length, 1)
+  assert.ok(items.filter((i) => i.status === 'duplicate').every((i) => i.reason === '该图片已存在'))
 
   // 已有收藏中存在 → 重复；图片无法解码 → 格式不支持
   const dup = await fetchBatch(parseBatchText('a：https://x.com/a.gif'), { fetch: async (u) => ({ kind: 'image', bytes: gif, finalUrl: u, contentType: '' }), prepare: prep, existingHashes: new Set([`h${gif[0]}-${gif.length}`]) })
   assert.equal(dup[0].status, 'duplicate')
   const bad = await fetchBatch(parseBatchText('a：https://x.com/a.gif'), { fetch: async (u) => ({ kind: 'image', bytes: gif, finalUrl: u, contentType: '' }), prepare: async () => { throw new Error('无法解码') }, existingHashes: new Set() })
   assert.match(bad[0].reason!, /图片格式不支持或已损坏/)
+})
+
+test('ZIP 链接：解压后逐张导入；没有解压能力时提示改用链接导入；带查询参数的链接保持原样', async () => {
+  const zipLine = parseBatchText('表情合集：https://x.com/dl?id=12&type=zip')
+  assert.equal(zipLine[0].candidates[0].url, 'https://x.com/dl?id=12&type=zip')
+  const zipFetch = async (u: string): Promise<Fetched> => ({ kind: 'zip', bytes: new Uint8Array([80, 75, 3, 4]), finalUrl: u, contentType: 'application/zip' })
+  const a = new Uint8Array([1, 2, 3])
+  const b = new Uint8Array([4, 5, 6, 7])
+  const r = await fetchBatch(zipLine, { fetch: zipFetch, prepare: prep, unzip: async () => [a, b, a], existingHashes: new Set() })
+  assert.equal(r[0].status, 'ok')
+  assert.equal(1 + (r[0].more?.length ?? 0), 2)
+  assert.match(r[0].reason!, /ZIP：3 张图片，可导入 2 张，重复 1 张/)
+  const r2 = await fetchBatch(zipLine, { fetch: zipFetch, prepare: prep, existingHashes: new Set() })
+  assert.match(r2[0].reason!, /通过链接导入/)
+  const q = parseBatchText('叹气：https://cdn.x.com/a.jpg?w=200&sign=Ab%2F')
+  assert.equal(q[0].candidates[0].url, 'https://cdn.x.com/a.jpg?w=200&sign=Ab%2F')
+  assert.equal(q[0].candidates.length, 1)
 })
 
 test('大量粘贴：300 行解析很快', () => {

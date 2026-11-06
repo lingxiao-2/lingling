@@ -117,7 +117,8 @@ export function userStickerText(s: Sticker | undefined, analyses: Map<string, St
   if (!s) return '[发来一个表情包（已被删除）]'
   const a = s.hash ? analyses.get(s.hash) : undefined
   if (a?.status === 'done') return `[发来一个表情包：${describeAnalysis(a)}]`
-  if (s.name.trim()) return `[发来一个表情包：${s.name.trim()}]`
+  // 没有识图结果时只有用户起的名称：如实说明，不让模型假装看到了图片
+  if (s.name.trim()) return `[发来一个表情包，名称是「${s.name.trim()}」（没有识别图片，只知道名称；不要描述画面）]`
   return '[发来一个表情包（没有识别图片内容，不清楚画了什么，不要假装知道或描述它）]'
 }
 
