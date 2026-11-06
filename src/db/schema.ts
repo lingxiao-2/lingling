@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 7
+export const DB_SCHEMA_VERSION = 8
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -519,6 +519,40 @@ export interface Note {
   deletedAt?: number
 }
 
+/* ---------- 生活应用：日历（v8） ---------- */
+export type EventKind = 'event' | 'anniversary' | 'birthday'
+export type EventRepeat = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
+export type AnniversaryType = 'met' | 'together' | 'birthday' | 'other'
+
+/**
+ * 聆聆内的日程（只保存在本机，不是 iPhone 系统日历里的事件）。
+ * 重复事件只保存一条，显示时按规则计算每一次，不复制多条。
+ */
+export interface CalEvent {
+  id: string
+  title: string
+  kind: EventKind
+  allDay: boolean
+  /** 开始日期（本地 YYYY-MM-DD） */
+  date: string
+  /** 非全天事件的开始、结束时间（HH:mm） */
+  startTime?: string
+  endTime?: string
+  location: string
+  note: string
+  repeat: EventRepeat
+  /** 纪念日 / 生日关联的角色（稳定 ID；角色被删除后显示为「已删除的角色」） */
+  characterId?: string
+  anniversaryType?: AnniversaryType
+  /** 关联的日记 */
+  diaryIds: string[]
+  /** local：在聆聆里创建。以后通过 iOS 快捷指令写入系统日历时会有别的来源标记，两者不会混在一起 */
+  source: 'local'
+  createdAt: number
+  updatedAt: number
+  deletedAt?: number
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -539,6 +573,7 @@ export class LinglingDB extends Dexie {
   photoBlobs!: Table<PhotoBlob, string>
   diaries!: Table<Diary, string>
   notes!: Table<Note, string>
+  events!: Table<CalEvent, string>
 
   constructor() {
     super('lingling-ai')
@@ -598,6 +633,10 @@ export class LinglingDB extends Dexie {
     // v7：生活应用「便签」。只新增一张表；旧的桌面便签（settings 中的 desktop-note）在第一次打开时复制成一张便签，原记录保留。
     this.version(7).stores({
       notes: 'id, pinned, updatedAt, deletedAt',
+    })
+    // v8：生活应用「日历」。只新增一张表，不修改已有数据。
+    this.version(8).stores({
+      events: 'id, date, kind, deletedAt',
     })
   }
 }

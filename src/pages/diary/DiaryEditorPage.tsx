@@ -9,7 +9,7 @@ import NavBar, { NavButton } from '../../components/NavBar'
 import PhotoPicker, { LinkedPhotos } from '../../components/PhotoPicker'
 import { ConfirmDialog } from '../../components/Sheet'
 import { db } from '../../db/db'
-import type { Diary } from '../../db/schema'
+import type { CalEvent, Diary } from '../../db/schema'
 import { restoreDiary, saveDiary, trashDiary, type DiaryPatch } from '../../db/diaryRepo'
 import { DIARY_LIMITS, dateParts, isDateString, localDate, MOODS, normalizeTags } from '../../life/diary'
 
@@ -142,6 +142,8 @@ export default function DiaryEditorPage() {
           {draft.tags.length > 0 && <div className="mt-1.5 text-[12px] text-[#6f88a8]">{draft.tags.map((t) => `#${t}`).join('  ')}</div>}
         </article>
 
+        {idRef.current && <LinkedEvents diaryId={idRef.current} date={draft.date} />}
+
         <section className="mx-4 mt-3 card px-4 py-3">
           <label className="flex items-start justify-between gap-3">
             <span className="text-[13.5px] text-[var(--c-text)]">
@@ -165,5 +167,21 @@ export default function DiaryEditorPage() {
         />
       )}
     </div>
+  )
+}
+
+/** 关联到这篇日记的日程，以及这一天的日程入口 */
+function LinkedEvents({ diaryId, date }: { diaryId: string; date: string }) {
+  const nav = useNavigate()
+  const events = useLiveQuery(() => db.events.toArray(), [], [] as CalEvent[]).filter((e) => !e.deletedAt && e.diaryIds.includes(diaryId))
+  return (
+    <section className="mx-4 mt-3 card px-4 py-3">
+      <div className="text-[12px] text-[var(--c-text-3)]">关联的日程</div>
+      {events.length === 0 && <div className="mt-1 text-[13px] text-[var(--c-text-3)]">没有日程关联这篇日记</div>}
+      {events.map((e) => (
+        <button key={e.id} className="press mt-1 block w-full truncate text-left text-[14px] text-[var(--c-text)]" onClick={() => nav(`/calendar/event/${e.id}`)}>· {e.title}</button>
+      ))}
+      <button className="press mt-1.5 text-[12.5px] text-[var(--c-accent-strong)]" onClick={() => nav(`/calendar?date=${date}`)}>在日历中查看这一天</button>
+    </section>
   )
 }
