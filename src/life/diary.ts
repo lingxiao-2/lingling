@@ -29,8 +29,9 @@ export function parseDate(s: string): Date {
   return new Date(y, (m || 1) - 1, d || 1)
 }
 
+/** 合法的 YYYY-MM-DD（不接受 2026-13-40 这类会被 Date 自动进位的日期） */
 export function isDateString(s: unknown): s is string {
-  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(parseDate(s).getTime())
+  return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && localDate(parseDate(s)) === s
 }
 
 export function dateParts(s: string) {

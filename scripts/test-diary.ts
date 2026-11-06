@@ -90,3 +90,11 @@ test('预留的 AI 读取接口：只返回勾选了「允许 AI 读取」的日
   await saveDiary(a, { aiReadable: false })
   assert.deepEqual(await listReadableDiaries(), [], '取消授权后立即不可读')
 })
+
+test('回归：不合法的日期（13 月 40 日、2 月 30 日）不会被当成合法日期', async () => {
+  const { isDateString } = await import('../src/life/diary')
+  assert.equal(isDateString('2026-13-40'), false)
+  assert.equal(isDateString('2026-02-30'), false)
+  assert.equal(isDateString('2028-02-29'), true)
+  assert.equal(isDateString('2026-11-06'), true)
+})

@@ -16,6 +16,8 @@ import DiaryTrashPage from './pages/diary/DiaryTrashPage'
 import NotesListPage from './pages/notes/NotesListPage'
 import NoteEditorPage from './pages/notes/NoteEditorPage'
 import NotesTrashPage from './pages/notes/NotesTrashPage'
+import CalendarPage from './pages/calendar/CalendarPage'
+import EventEditorPage from './pages/calendar/EventEditorPage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
 import MomentComposePage from './pages/MomentComposePage'
@@ -71,6 +73,8 @@ export default function App() {
       <Route path="notes" element={<NotesListPage />} />
       <Route path="notes/trash" element={<NotesTrashPage />} />
       <Route path="notes/:id" element={<NoteEditorPage />} />
+      <Route path="calendar" element={<CalendarPage />} />
+      <Route path="calendar/event/:id" element={<EventEditorPage />} />
       <Route element={<TabLayout />}>
         <Route path="messages" element={<MessagesPage />} />
         <Route path="contacts" element={<ContactsPage />} />
