@@ -9,6 +9,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Icon } from '../theme/icons'
 import { ActionSheet } from './Sheet'
 import { StickerPicture } from './StickerView'
+import LinkImport from './LinkImport'
 import type { Sticker, StickerAnalysis } from '../db/schema'
 import { addSticker, deleteSticker, existingStickerHashes, listStickers, updateSticker } from '../db/stickerRepo'
 import { prepareStickerBytes, isSafeStickerSrc } from '../services/stickers'
@@ -102,6 +103,7 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
   const [menu, setMenu] = useState<Sticker | null>(null)
   const [preview, setPreview] = useState<Sticker | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [result, setResult] = useState<StickerImportResult | null>(null)
   const imgRef = useRef<HTMLInputElement>(null)
@@ -213,9 +215,19 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
           actions={[
             { label: '从相册或文件选择', hint: '可以一次选很多张，支持 PNG / JPEG / WebP / GIF', icon: <Icon name="image" />, onClick: () => imgRef.current?.click() },
             { label: '导入 ZIP 表情合集', hint: '解压后按合集分类，重复的图片会自动跳过', icon: <Icon name="import" />, onClick: () => zipRef.current?.click() },
+            { label: '通过链接导入', hint: '粘贴图片、ZIP 或公开网页的链接', icon: <Icon name="link" />, onClick: () => setLinkOpen(true) },
           ]}
         />
         </Layer>
+      )}
+      {linkOpen && (
+        <LinkImport
+          onClose={() => setLinkOpen(false)}
+          onDone={(r) => {
+            setLinkOpen(false)
+            setResult(r)
+          }}
+        />
       )}
       {menu && (
         <Layer>

@@ -19,6 +19,8 @@ export const STICKER_ZIP_LIMITS: ZipLimits = {
 export interface StickerInput {
   name: string
   bytes: Uint8Array
+  /** 合集名（默认 'mine'；ZIP 默认为文件名） */
+  packId?: string
 }
 
 export interface StickerImportResult {
@@ -52,7 +54,7 @@ export async function expandInputs(inputs: StickerInput[]): Promise<{ items: (St
   for (const input of inputs) {
     const isZip = input.bytes.length >= 4 && input.bytes[0] === 0x50 && input.bytes[1] === 0x4b && input.bytes[2] === 0x03 && input.bytes[3] === 0x04
     if (!isZip) {
-      items.push({ ...input, packId: 'mine' })
+      items.push({ ...input, packId: input.packId ?? 'mine' })
       continue
     }
     const pack = input.name.replace(/\.zip$/i, '').trim() || '表情合集'
