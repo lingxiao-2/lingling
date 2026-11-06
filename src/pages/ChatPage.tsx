@@ -13,6 +13,7 @@ import NavBar from '../components/NavBar'
 import { BOW_SVG, dataUri } from '../assets/winter/ornaments'
 import Avatar from '../components/Avatar'
 import { ActionSheet } from '../components/Sheet'
+import ContextUsedSheet from '../components/ContextUsedSheet'
 import type { SheetAction } from '../components/Sheet'
 import { useAIConfig, useProfile } from '../store/profile'
 import { ChatWallpaper } from '../components/Wallpaper'
@@ -168,6 +169,7 @@ export default function ChatPage() {
 
   const [text, setText] = useState('')
   const [menuMsg, setMenuMsg] = useState<Message | null>(null)
+  const [usedInfo, setUsedInfo] = useState<Message['contextUsed'] | null>(null)
   const [showJump, setShowJump] = useState(false)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [plusOpen, setPlusOpen] = useState(false)
@@ -364,6 +366,10 @@ export default function ChatPage() {
     const acts: SheetAction[] = m.kind === 'sticker' ? [] : [{ label: '复制', onClick: () => void copyText(m.content) }]
     if (m.senderType === 'character' && lastGroup?.some((x) => x.id === m.id) && !busy && !notConfigured) {
       acts.push({ label: '重新生成', onClick: () => void regenerate(convId) })
+    }
+    if (m.senderType === 'character') {
+      const head = visible.find((x) => x.replyGroupId && x.replyGroupId === m.replyGroupId && x.contextUsed) ?? (m.contextUsed ? m : undefined)
+      if (head?.contextUsed) acts.push({ label: '这次用到的记忆与设定', onClick: () => setUsedInfo(head.contextUsed!) })
     }
     acts.push({ label: '删除', danger: true, onClick: () => void softDeleteMessage(m) })
     return acts
@@ -671,6 +677,7 @@ export default function ChatPage() {
       {menuMsg && (
         <ActionSheet title={menuMsg.content.slice(0, 30)} onClose={() => setMenuMsg(null)} actions={menuActions(menuMsg)} />
       )}
+      {usedInfo && <ContextUsedSheet used={usedInfo} onClose={() => setUsedInfo(null)} onOpenFull={charId ? () => nav(`/character/${charId}/context`) : undefined} />}
 
     </div>
   )

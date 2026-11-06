@@ -558,3 +558,14 @@ test('撤销整理只恢复整理结果：人设、关系、记忆、聊天记�
   await db.characters.update(charId, { organized: c2.organizedUndo?.prev ?? undefined, organizedUndo: undefined })
   assert.equal((await db.characters.get(charId))!.organized, undefined)
 })
+
+test('回复的第一条记录这次用到的记忆与世界书（供「这次用到的记忆与设定」查看）', async () => {
+  await db.memories.add({ id: 'memU', characterId: charId, kind: 'user-fact', content: '小雪怕冷', sourceMessageIds: [], status: 'active', pinned: true, createdAt: 1 })
+  await sendUserMessage(convId, '钟楼今天响了')
+  await runReply(convId)
+  const ai = (await db.messages.where('conversationId').equals(convId).sortBy('createdAt')).filter((m) => m.senderType === 'character')
+  assert.ok(ai.length >= 1)
+  assert.deepEqual(ai[0].contextUsed?.lore, ['钟楼'])
+  assert.deepEqual(ai[0].contextUsed?.memories.map((m) => m.content), ['小雪怕冷'])
+  for (const m of ai.slice(1)) assert.equal(m.contextUsed, undefined)
+})

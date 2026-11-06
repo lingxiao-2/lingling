@@ -165,6 +165,8 @@ export interface Message {
   superseded?: boolean
   /** 生成该回复的模型名称 */
   model?: string
+  /** 生成这次回复时调用的记忆、世界书与扩展资料（只记在一次回复的第一条上，供查看） */
+  contextUsed?: { memories: { id: string; content: string }[]; lore: string[]; profile: string[]; organized: boolean; relationship: string }
   createdAt: number
   updatedAt: number
 }

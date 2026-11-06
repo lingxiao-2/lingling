@@ -11,6 +11,7 @@ import type { ChatTurn } from './provider'
 import { renderAssistantTurn, type ReplyPart } from './messageFormat'
 import { organizedSection } from './organize'
 import { memorySection, pickMemories } from './memory'
+import { recentReplies, repetitionHint, voiceSection } from './voice'
 import { formatSection, stickerFrequency, styleSection, type StickerOption } from './style'
 import { layerProfile, pickRelated } from './profile'
 import { effectiveRelationship, relationshipSection } from './relationship'
@@ -56,6 +57,8 @@ export interface BuiltContext {
   relatedProfileChunks: number
   /** 本次发送的记忆 */
   usedMemoryIds: string[]
+  /** 本次调用的记忆、世界书与扩展资料（保存在回复上，供用户查看） */
+  used: ContextUsed
   /** 资料使用情况：哪些内容进入了 system，哪些因长度或相关度没有发送（供预览页面显示） */
   report: ContextReport
   historyCount: number
@@ -165,6 +168,14 @@ export function triggeredEntries(books: Lorebook[], recentText: string, maxChars
   return out
 }
 
+export interface ContextUsed {
+  memories: { id: string; content: string }[]
+  lore: string[]
+  profile: string[]
+  organized: boolean
+  relationship: string
+}
+
 export interface ContextReport {
   /** 实际发送的 system 段落（按顺序） */
   sections: { label: string; chars: number }[]
@@ -250,11 +261,13 @@ export function buildContext(input: ContextInput): BuiltContext {
   if (c.sourceDoc?.text) skip('导入原文全文', c.sourceDoc.chars, '全文只保存在本机供核对和重新整理；聊天时发送的是上面的字段和要点')
   const exchanges = active.filter((x) => x.senderType === 'user').length
   add('表达偏好', styleSection(c, exchanges, user, rel.status))
+  add('说话方式', voiceSection(name, user))
+  add('避免重复', repetitionHint(recentReplies(active)))
   const freq = stickerFrequency(c)
   const analyses = input.analyses ?? new Map<string, StickerAnalysis>()
   const offered = freq === 'never' ? { options: [], map: new Map<string, string>() } : offeredStickers(input.stickers ?? [], analyses, recent)
   add(offered.options.length ? `消息格式（含 ${offered.options.length} 个可用表情包）` : '消息格式', formatSection(freq, offered.options))
-  add('结尾提醒', '只依据以上设定和下面真实发生过的聊天内容回应，不要编造你们没有共同经历过的事情；不确定时可以自然地询问。')
+  add('结尾提醒', '只依据以上设定和下面真实发生过的聊天内容回应，不要编造你们没有共同经历过的事情；不确定时可以自然地询问，或用推测的语气。')
   const stickerById = new Map((input.stickers ?? []).map((st) => [st.id, st]))
   const aliasOf = new Map([...offered.map].map(([a, id]) => [id, a]))
 
@@ -304,6 +317,13 @@ export function buildContext(input: ContextInput): BuiltContext {
     usedEntries: entries.map((e) => e.name),
     relatedProfileChunks: related.length,
     usedMemoryIds: usedMemories.map((x) => x.id),
+    used: {
+      memories: usedMemories.map((x) => ({ id: x.id, content: x.content.slice(0, 200) })),
+      lore: entries.map((e) => e.name),
+      profile: [...new Set(related.map((r) => r.label))],
+      organized: !!org,
+      relationship: rel.status === 'unknown' ? '' : rel.status === 'custom' ? rel.customLabel || '自定义' : rel.status,
+    },
     report,
     historyCount: picked.length,
     stickerMap: offered.map,
