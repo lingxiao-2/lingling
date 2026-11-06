@@ -3,6 +3,7 @@
  * 显示实际会发送的 system 内容、各段长度，以及没有发送的内容和原因。
  */
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import NavBar from '../components/NavBar'
@@ -11,6 +12,90 @@ import type { BuiltContext } from '../services/ai/context'
 import { previewContext } from '../services/ai/contextInput'
 
 const n = (x: number) => x.toLocaleString()
+
+const SOURCE_LABEL = { user: '你确认 / 修改过', auto: '从人设原文识别', none: '没有识别到' } as const
+
+function Box({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mt-3 glass rounded-[var(--radius-card)] px-4 py-3 text-[13px] text-[var(--c-text-2)]">
+      <div className="serif-zh text-[15px] text-[var(--c-brand)]">{title}</div>
+      {children}
+    </section>
+  )
+}
+
+/** 调试信息：全部来自本次构建的上下文（与实际请求同一份），不包含 API Key 或其他配置 */
+function DebugPanel({ ctx }: { ctx: BuiltContext }) {
+  const d = ctx.debug
+  const muted = 'text-[11.5px] text-[var(--c-text-3)]'
+  return (
+    <>
+      <Box title="核心人设">
+        {d.persona.length === 0 && <div className={`mt-1 ${muted}`}>这个角色还没有填写人设。</div>}
+        {d.persona.map((p) => (
+          <details key={p.label} className="mt-1.5">
+            <summary className="cursor-pointer">
+              {p.label} <span className={muted}>{n(p.text.length)} 字 · 原文发送，未改写</span>
+            </summary>
+            <div className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-relaxed">{p.text}</div>
+          </details>
+        ))}
+        {d.voice && <div className={`mt-2 whitespace-pre-wrap ${muted}`}>{d.voice}</div>}
+      </Box>
+
+      <Box title="当前关系">
+        <div className="mt-1.5">
+          {d.relationship.status} <span className={muted}>· {SOURCE_LABEL[d.relationship.source]}</span>
+        </div>
+        {d.relationship.nicknames.length > 0 && <div className={muted}>称呼你：{d.relationship.nicknames.join('、')}</div>}
+        {d.relationship.changedAfterChat && <div className={muted}>你在已有聊天之后修改过关系：本次会提醒角色以新关系为准。</div>}
+        {d.relationship.dedupedQuotes > 0 && <div className={muted}>{d.relationship.dedupedQuotes} 句关系原文已经出现在人设里，没有重复发送。</div>}
+      </Box>
+
+      <Box title={`本次召回的长期记忆 ${d.memories.length}`}>
+        {d.memories.length === 0 && <div className={`mt-1 ${muted}`}>这次没有带上记忆（没有固定记忆，或与最近聊天无关）。</div>}
+        {d.memories.map((x) => (
+          <div key={x.id} className="mt-1">
+            · {x.pinned && <span className="text-[11px] text-[var(--c-accent-strong)]">固定 </span>}
+            {x.content}
+          </div>
+        ))}
+      </Box>
+
+      <Box title={`本次使用的世界书条目 ${d.lore.length}`}>
+        {d.lore.length === 0 && <div className={`mt-1 ${muted}`}>没有。</div>}
+        {d.lore.map((e, i) => (
+          <div key={i} className="mt-1">
+            · {e.name} <span className={muted}>{e.book ? `《${e.book}》` : ''}{e.constant ? ' · 常驻' : ' · 关键词触发'}</span>
+          </div>
+        ))}
+      </Box>
+
+      {d.guidance.length > 0 && (
+        <Box title="这一轮的分寸提示">
+          {d.guidance.map((g, i) => (
+            <div key={i} className="mt-1">· {g}</div>
+          ))}
+        </Box>
+      )}
+
+      <Box title="上下文预算">
+        <div className="mt-1.5">
+          近期聊天记录：发送 {d.history.sent} / {d.history.total} 条（{n(d.history.chars)} 字）· 你已发言 {d.history.exchanges} 轮
+        </div>
+        {d.budget.map((b) => (
+          <div key={b.label} className="mt-1 flex justify-between gap-3">
+            <span>{b.label}</span>
+            <span className={`shrink-0 ${muted}`}>
+              {n(b.used)} / {n(b.limit)} 字
+            </span>
+          </div>
+        ))}
+        <div className={`mt-1 ${muted}`}>聊天记录有上限：聊得再久，每次发送的长度也不会无限增长；更早的重要的事通过长期记忆召回。</div>
+      </Box>
+    </>
+  )
+}
 
 export default function ContextPreviewPage() {
   const { id = '' } = useParams()
@@ -48,6 +133,8 @@ export default function ContextPreviewPage() {
                 <div className="mt-0.5 text-[11.5px] text-[var(--c-text-3)]">更早的 {ctx.report.history.total - ctx.report.history.sent} 条聊天超出长度上限，没有发送（重要的事可以存为长期记忆）。</div>
               )}
             </section>
+
+            <DebugPanel ctx={ctx} />
 
             <section className="mt-3 glass rounded-[var(--radius-card)] px-4 py-3 text-[13px] text-[var(--c-text-2)]">
               <div className="serif-zh text-[15px] text-[var(--c-brand)]">已发送的内容</div>
