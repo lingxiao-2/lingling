@@ -62,6 +62,8 @@ export interface Character {
   importSource?: ImportSource
   /** 资料整理结果（AI 或规则，用户确认后保存；原文不变），见 services/ai/organize.ts */
   organized?: OrganizedProfile
+  /** 上一次保存整理结果之前的版本（用于一键撤销；prev 为 null 表示之前没有整理过） */
+  organizedUndo?: { prev: OrganizedProfile | null; savedAt: number }
   createdAt: number
   updatedAt: number
 }

@@ -513,3 +513,48 @@ test('保存后读回的资料明显变少：整个导入回滚并报错，不�
   }
   assert.equal(await db.characters.count(), count)
 })
+
+test('「查看发送给 AI 的设定」与实际请求的 system 完全一致（含关系、整理要点、记忆、世界书、长篇人设）', async () => {
+  const { previewContext } = await import('../src/services/ai/contextInput')
+  const long = Array.from({ length: 40 }, (_, i) => `第${i}段背景：雪城的往事${'细节'.repeat(40)}`).join('\n\n')
+  await db.characters.update(charId, {
+    backstory: long,
+    relationToUser: '你的恋人，交往两年',
+    organized: { method: 'rule', createdAt: 1, sourceChars: 10, skippedChars: 0, dropped: 0, items: [{ cat: 'personality', point: '温柔但嘴硬', quote: '温柔' }], conflicts: [] },
+  })
+  await db.memories.add({ id: 'mem1', characterId: charId, kind: 'user-fact', content: '小雪对芒果过敏', sourceMessageIds: [], status: 'active', pinned: true, createdAt: 1 })
+  await sendUserMessage(convId, '钟楼今天响了吗')
+  const preview = await previewContext((await db.characters.get(charId))!)
+  await runReply(convId)
+  const sent = calls[0].body.messages[0].content
+  assert.equal(preview.messages[0].content, sent)
+  assert.match(sent, /芒果过敏/)
+  assert.match(sent, /温柔但嘴硬/)
+  assert.match(sent, /午夜敲十三下/)
+  assert.ok(preview.report.omitted.some((o) => o.label.startsWith('扩展资料')))
+  assert.equal(preview.report.sections.reduce((n, s) => n + s.chars, 0) + (preview.report.sections.length - 1) * 2, sent.length)
+})
+
+test('撤销整理只恢复整理结果：人设、关系、记忆、聊天记录都不变', async () => {
+  const before = (await db.characters.get(charId))!
+  await db.memories.add({ id: 'mem2', characterId: charId, kind: 'event', content: '一起看过初雪', sourceMessageIds: [], status: 'active', createdAt: 1 })
+  await sendUserMessage(convId, '早')
+  const v1 = { method: 'rule' as const, createdAt: 1, sourceChars: 1, skippedChars: 0, dropped: 0, items: [{ cat: 'identity' as const, point: '旧版', quote: '图书管理员' }], conflicts: [] }
+  const v2 = { ...v1, createdAt: 2, items: [{ cat: 'identity' as const, point: '新版', quote: '图书管理员' }] }
+  await db.characters.update(charId, { organized: v1, organizedUndo: { prev: null, savedAt: 1 } })
+  await db.characters.update(charId, { organized: v2, organizedUndo: { prev: v1, savedAt: 2 } })
+  // 撤销（与界面相同的写法）
+  const c = (await db.characters.get(charId))!
+  await db.characters.update(charId, { organized: c.organizedUndo?.prev ?? undefined, organizedUndo: undefined })
+  const after = (await db.characters.get(charId))!
+  assert.equal(after.organized?.items[0].point, '旧版')
+  assert.equal(after.organizedUndo, undefined)
+  for (const k of ['name', 'bio', 'personality', 'speakingStyle', 'backstory', 'relationToUser'] as const) assert.equal(after[k], before[k])
+  assert.equal(await db.memories.where('characterId').equals(charId).count(), 1)
+  assert.equal(await db.messages.where('conversationId').equals(convId).count(), 1)
+  // 再撤销到「未整理」
+  await db.characters.update(charId, { organized: v1, organizedUndo: { prev: null, savedAt: 3 } })
+  const c2 = (await db.characters.get(charId))!
+  await db.characters.update(charId, { organized: c2.organizedUndo?.prev ?? undefined, organizedUndo: undefined })
+  assert.equal((await db.characters.get(charId))!.organized, undefined)
+})

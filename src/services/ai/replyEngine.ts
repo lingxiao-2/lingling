@@ -8,12 +8,12 @@
  *  - 只在用户发送、重试、重新生成时请求，不会自动发起无上限的请求
  */
 import { useSyncExternalStore } from 'react'
-import { db, DEFAULT_PROFILE } from '../../db/db'
+import { db } from '../../db/db'
 import { getDeviceId, normalizeAIConfig } from './service'
-import { DEFAULT_WORLD_ID } from '../../db/schema'
-import type { AIConfig, Lorebook, Memory, Message, Sticker, UserProfile } from '../../db/schema'
+import type { AIConfig, Memory, Message, Sticker } from '../../db/schema'
 import { uid } from '../../lib/util'
 import { buildContext } from './context'
+import { loadContextSources, loadMemories } from './contextInput'
 import { proposeFromRequests } from './memory'
 import { capParts, MAX_PARTS, parseReply, type ReplyPart } from './messageFormat'
 import { AIError, streamChat } from './openai'
@@ -200,12 +200,8 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
     const character = await db.characters.get(conv.characterIds[0])
     if (!character) throw new AIError('角色不存在或已被删除', 'config')
     const config = await loadConfig()
-    const profile = { ...DEFAULT_PROFILE, ...(((await db.settings.get('profile'))?.value as UserProfile | undefined) ?? {}) }
-    const world = character.worldId !== DEFAULT_WORLD_ID ? await db.worlds.get(character.worldId) : undefined
-    const charBookIds = (await db.characterLorebooks.where('characterId').equals(character.id).toArray()).map((l) => l.lorebookId)
-    const worldBookIds = world ? (await db.worldLorebooks.where('worldId').equals(world.id).toArray()).map((l) => l.lorebookId) : []
-    const books = (await db.lorebooks.bulkGet([...new Set([...charBookIds, ...worldBookIds])])).filter((b): b is Lorebook => !!b)
-    const stickers: Sticker[] = await db.stickers.toArray()
+    // 与「查看发送给 AI 的设定」共用同一套读取逻辑
+    const { profile, world, books, stickers } = await loadContextSources(character)
     let history = await db.messages.where('conversationId').equals(convId).sortBy('createdAt')
     if (regenerateFamily) {
       // 重新生成：上下文中排除当前版本
@@ -238,7 +234,7 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
     }
 
     // 长期记忆：用户在聊天中明确要求「记住」的话，原样保存（敏感内容先等用户确认）
-    let memories = await db.memories.where('characterId').equals(character.id).toArray()
+    let memories = await loadMemories(character.id)
     const requested = proposeFromRequests(history, memories)
     if (requested.length) {
       const now = Date.now()

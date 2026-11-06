@@ -9,6 +9,7 @@ import MomentsPage from './pages/MomentsPage'
 import MePage from './pages/MePage'
 import ChatPage from './pages/ChatPage'
 import CharacterEditPage from './pages/CharacterEditPage'
+import ContextPreviewPage from './pages/ContextPreviewPage'
 import CharacterProfilePage from './pages/CharacterProfilePage'
 import MemoryPage from './pages/MemoryPage'
 import ApiSettingsPage from './pages/ApiSettingsPage'
@@ -52,6 +53,7 @@ export default function App() {
       </Route>
       <Route path="chat/:convId" element={<ChatPage />} />
       <Route path="character/new" element={<CharacterEditPage />} />
+      <Route path="character/:id/context" element={<ContextPreviewPage />} />
       <Route path="character/:id" element={<CharacterProfilePage />} />
       <Route path="character/:id/edit" element={<CharacterEditPage />} />
       <Route path="character/:id/memories" element={<MemoryPage />} />

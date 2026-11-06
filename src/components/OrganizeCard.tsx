@@ -11,6 +11,7 @@ import { CATEGORIES, organizeSource, organizeWithAI, organizeWithRules, planOrga
 import { getDeviceId } from '../services/ai/service'
 import { useAIConfig } from '../store/profile'
 import { Section } from './ui'
+import { ConfirmDialog } from './Sheet'
 
 function Result({ o }: { o: OrganizedProfile }) {
   return (
@@ -55,6 +56,13 @@ export default function OrganizeCard({ c, autoOpen }: { c: Character; autoOpen?:
     if (autoOpen && !c.organized) setOpen(true)
   }, [autoOpen, c.organized])
   const o = c.organized
+  const [undoAsk, setUndoAsk] = useState(false)
+  // 撤销只恢复整理结果：人设字段、原文、关系、记忆和聊天记录都不变
+  const undo = async () => {
+    setUndoAsk(false)
+    const prev = c.organizedUndo?.prev
+    await db.characters.update(c.id, { organized: prev ?? undefined, organizedUndo: undefined, updatedAt: Date.now() })
+  }
   return (
     <Section title="资料整理">
       <div className="px-4 py-3 text-[13px] text-[var(--c-text-2)]">
@@ -73,13 +81,32 @@ export default function OrganizeCard({ c, autoOpen }: { c: Character; autoOpen?:
             {o ? '重新整理' : '整理'}
           </button>
         </div>
+        {o && <div className="mt-1 text-[11.5px] text-[var(--c-text-3)]">整理于 {new Date(o.createdAt).toLocaleString()} · 原文 {o.sourceChars.toLocaleString()} 字（完整保留）</div>}
+        {c.organizedUndo && (
+          <button onClick={() => setUndoAsk(true)} className="press mt-2 h-7 px-3 rounded-full border border-[var(--c-line)] text-[12px] text-[var(--c-text-2)]">
+            撤销上次整理{c.organizedUndo.prev ? `（恢复 ${new Date(c.organizedUndo.prev.createdAt).toLocaleString()} 的版本）` : '（恢复到未整理）'}
+          </button>
+        )}
         {o && (
           <div className="mt-2">
             <Result o={o} />
           </div>
         )}
+        <details className="mt-2">
+          <summary className="text-[12px] text-[var(--c-accent-strong)]">查看原文</summary>
+          <pre className="mt-1 max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words rounded-[12px] bg-white/40 px-3 py-2 text-[12px] leading-relaxed font-[inherit]">{organizeSource(c)}</pre>
+        </details>
       </div>
       {open && <OrganizeSheet c={c} onClose={() => setOpen(false)} />}
+      {undoAsk && (
+        <ConfirmDialog
+          title="撤销上次整理？"
+          message={c.organizedUndo?.prev ? '恢复到上一次的整理结果。' : '删除整理结果，恢复到没有整理过的状态。'}
+          confirmText="撤销"
+          onConfirm={() => void undo()}
+          onCancel={() => setUndoAsk(false)}
+        />
+      )}
     </Section>
   )
 }
@@ -117,7 +144,8 @@ function OrganizeSheet({ c, onClose }: { c: Character; onClose: () => void }) {
   }
   const save = async () => {
     if (!result) return
-    await db.characters.update(c.id, { organized: result, updatedAt: Date.now() })
+    // 只改整理结果这一个字段：人设原文、关系、记忆和聊天记录都不受影响；保留上一个版本以便撤销
+    await db.characters.update(c.id, { organized: result, organizedUndo: { prev: c.organized ?? null, savedAt: Date.now() }, updatedAt: Date.now() })
     onClose()
   }
 
