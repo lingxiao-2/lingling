@@ -11,7 +11,7 @@ import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppIcon from '../desktop/AppIcon'
 import { appHref, APPS, type AppId } from '../desktop/apps'
-import { defaultLayout, GRID, itemAt, moveItem, type DesktopItem, type DesktopLayout, type Slot } from '../desktop/layout'
+import { cellsOf, defaultLayout, GRID, itemAt, moveItem, type DesktopItem, type DesktopLayout, type Slot } from '../desktop/layout'
 import { loadLayout, NOTE_MAX, resetLayout, saveLayout, saveNote, savePage, saveWidgetCharacter, useDesktopLayout, useDesktopNote } from '../desktop/layoutStore'
 import { WidgetView } from '../desktop/widgets'
 import { ActionSheet } from '../components/Sheet'
@@ -19,6 +19,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { getOrCreateSingleConversation } from '../db/repo'
 import { useUnreadTotal } from '../desktop/useUnread'
+import { deskMetrics } from '../desktop/metrics'
+import DeskOrnaments from '../desktop/DeskOrnaments'
 import { ConfirmDialog } from '../components/Sheet'
 
 export const LONG_PRESS_MS = 480
@@ -90,12 +92,12 @@ export default function DesktopPage() {
     setPageState(saved.page)
   }, [saved])
 
-  // 图标大小跟随每行的实际高度（小屏幕如 iPhone SE 自动缩小，名称不会被裁掉）
-  const [iconSize, setIconSize] = useState(60)
+  // 图标、行距、列间距与小组件尺寸按屏幕宽度计算（见 metrics.ts），屏幕太矮时再按高度缩小
+  const [metrics, setMetrics] = useState(() => deskMetrics(390, 640))
   useLayoutEffect(() => {
     const el = pager.current
     if (!el) return
-    const fit = () => setIconSize(Math.round(Math.min(60, Math.max(46, el.clientHeight / GRID.rows - 22))))
+    const fit = () => el.clientWidth && setMetrics(deskMetrics(el.clientWidth, el.clientHeight, GRID.rows))
     fit()
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null
     ro?.observe(el)
@@ -245,14 +247,14 @@ export default function DesktopPage() {
           {...handlers(s)}
           role={it.widget === 'clock' ? undefined : 'button'}
           onClick={() => onClickWidget(it)}
-          className={`${it.size === 'medium' ? 'col-span-4' : 'col-span-2'} row-span-2 p-[7px] ${it.widget === 'clock' ? '' : 'press'} ${cellClass(s)}`}
+          className={`desk-wslot ${it.size === 'medium' ? 'col-span-4' : 'col-span-2'} row-span-2 ${it.widget === 'clock' ? '' : 'press'} ${cellClass(s)}`}
         >
           <WidgetView item={it} />
         </div>
       )
     }
     return (
-      <div key={it.app} className="flex items-start justify-center pt-1">
+      <div key={it.app} className="flex items-start justify-center">
         <button {...handlers(s)} aria-label={APPS[it.app].name} className={`press ${cellClass(s)}`} onClick={() => onClickItem(it.app)}>
           <AppIcon id={it.app} badge={it.app === 'messages' ? unread : 0} />
         </button>
@@ -263,9 +265,15 @@ export default function DesktopPage() {
   return (
     <div
       className="desk h-dvh flex flex-col overflow-hidden relative"
-      style={{ paddingTop: 'calc(var(--safe-top) + 14px)', ['--desk-icon' as string]: `${iconSize}px` }}
+      style={{
+        paddingTop: 'calc(var(--safe-top) + 18px)',
+        ['--desk-icon' as string]: `${metrics.icon}px`,
+        ['--desk-row' as string]: `${metrics.row}px`,
+        ['--desk-gap' as string]: `${metrics.gap}px`,
+      }}
       data-editing={editing || undefined}
     >
+      <DeskOrnaments />
       {editing && (
         <div className="absolute left-0 right-0 z-20 flex justify-between px-4" style={{ top: 'calc(var(--safe-top) + 4px)' }}>
           <button className="press h-8 px-3.5 rounded-full glass-3 text-[13px] text-[var(--c-text-2)]" onClick={() => setConfirmReset(true)}>
@@ -283,15 +291,19 @@ export default function DesktopPage() {
         aria-label="桌面"
       >
         {layout.pages.map((items, i) => (
-          <section key={i} data-drop={i} className="desk-page w-full shrink-0 h-full px-[18px]" aria-label={`第 ${i + 1} 页`} aria-hidden={i !== page}>
-            <div className="h-full grid grid-cols-4" style={{ gridTemplateRows: `repeat(${GRID.rows}, minmax(0, 1fr))` }}>
-              {items.map((it, index) => renderItem(it, { area: 'page', page: i, index }))}
+          <section key={i} data-drop={i} className="desk-page w-full shrink-0 h-full" style={{ paddingLeft: metrics.pad, paddingRight: metrics.pad }} aria-label={`第 ${i + 1} 页`} aria-hidden={i !== page}>
+            <div className="relative h-full">
+              {/* 空位较多的页：底部一行很淡的冬日来信落款（只是装饰，不接收点按，不影响拖放） */}
+              {items.reduce((n, it) => n + cellsOf(it), 0) <= 16 && <Signature index={i} />}
+              <div className="relative grid grid-cols-4 content-start" style={{ gridTemplateRows: `repeat(${GRID.rows}, var(--desk-row))` }}>
+                {items.map((it, index) => renderItem(it, { area: 'page', page: i, index }))}
+              </div>
             </div>
           </section>
         ))}
       </div>
 
-      <div className="shrink-0 flex justify-center gap-2 py-2.5" role="tablist" aria-label="桌面页">
+      <div className="shrink-0 flex justify-center gap-[7px] py-3" role="tablist" aria-label="桌面页">
         {layout.pages.map((_, i) => (
           <button
             key={i}
@@ -299,13 +311,13 @@ export default function DesktopPage() {
             aria-selected={i === page}
             aria-label={`第 ${i + 1} 页`}
             onClick={() => goPage(i)}
-            className={`h-[7px] w-[7px] rounded-full transition-colors ${i === page ? 'bg-[var(--c-accent-strong)]' : 'bg-white/70 shadow-[inset_0_0_0_0.5px_rgba(120,150,190,0.35)]'}`}
+            className={`desk-dot ${i === page ? 'desk-dot-on' : ''}`}
           />
         ))}
       </div>
 
-      <nav className="shrink-0 px-3" style={{ paddingBottom: 'calc(var(--safe-bottom) + 8px)' }} aria-label="Dock">
-        <div data-drop="dock" style={{ height: iconSize + 28 }} className={`desk-dock rounded-[32px] grid grid-cols-4 items-center px-2 ${drag && drag.over?.area === 'dock' ? 'desk-dock-over' : ''}`}>
+      <nav className="shrink-0" style={{ paddingLeft: metrics.pad - 4, paddingRight: metrics.pad - 4, paddingBottom: 'calc(var(--safe-bottom) + 10px)' }} aria-label="Dock">
+        <div data-drop="dock" style={{ height: metrics.dock }} className={`desk-dock grid grid-cols-4 items-center px-1 ${drag && drag.over?.area === 'dock' ? 'desk-dock-over' : ''}`}>
           {layout.dock.map((id, index) => {
             const s: Slot = { area: 'dock', index }
             return (
@@ -384,6 +396,24 @@ function NoteEditor({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+const SIGNATURES = ['Lingling · a winter letter', 'with love, from the snow', 'Lingling · a winter letter']
+
+function Signature({ index }: { index: number }) {
+  return (
+    <div className="desk-signature pointer-events-none absolute inset-x-0 bottom-[6%] flex flex-col items-center" aria-hidden>
+      <svg width="34" height="34" viewBox="0 0 34 34" fill="none" className="opacity-80">
+        <circle cx="17" cy="17" r="15.5" stroke="#fff" strokeWidth="0.8" />
+        <circle cx="17" cy="17" r="12.5" stroke="#b5c8de" strokeWidth="0.6" />
+        <path d="M17 8v18M9.2 12.5l15.6 9M9.2 21.5l15.6-9" stroke="#9fb5d0" strokeWidth="0.9" strokeLinecap="round" />
+      </svg>
+      <div className="mt-2 text-[24px] leading-none text-[#8aa2c1]" style={{ fontFamily: 'var(--font-script)', textShadow: '0 0 10px rgba(255,255,255,0.95)' }}>
+        {SIGNATURES[index % SIGNATURES.length]}
+      </div>
+      <span className="mt-2 h-px w-24 bg-[linear-gradient(90deg,rgba(160,182,210,0),rgba(160,182,210,0.6),rgba(160,182,210,0))]" />
     </div>
   )
 }
