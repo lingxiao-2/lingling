@@ -160,12 +160,38 @@ const GUIDE: Partial<Record<RelationshipStatus, string>> = {
   stranger: '你们是刚认识的陌生人。保持礼貌和分寸，关系要在真实的聊天中慢慢发展，不要突然亲昵。',
 }
 
+export interface RelationshipSectionOptions {
+  /** 已经发送过的人设文字：原文依据、共同经历、相处习惯如果已经原样出现在里面，就不再重复发送 */
+  alreadySent?: string
+  /** 用户在已有聊天之后修改过关系：提醒模型以新关系为准 */
+  changedAfterChat?: boolean
+}
+
+const normQuote = (s: string) => s.replace(/…$/, '').replace(/\s+/g, '')
+
+/** 原文摘句是否已经在发送的人设里（避免同一句话发两遍） */
+export function alreadyIncluded(quote: string, sent: string): boolean {
+  const q = normQuote(quote)
+  return q.length >= 6 && sent.includes(q)
+}
+
+/** 关系说明中被省略的、已在人设里出现过的摘句数（供预览显示） */
+export function duplicatedQuotes(rel: Relationship, alreadySent: string): number {
+  const sent = alreadySent.replace(/\s+/g, '')
+  return [...rel.evidence.slice(0, 3).map((e) => e.quote), ...rel.sharedHistory.slice(0, 6), ...rel.habits.slice(0, 4)].filter((q) => alreadyIncluded(q, sent)).length
+}
+
 /** 发给模型的关系说明（system 中，每次都发送，保证长期一致） */
-export function relationshipSection(rel: Relationship, user: string): string {
+export function relationshipSection(rel: Relationship, user: string, opts: RelationshipSectionOptions = {}): string {
   if (rel.status === 'unknown') return ''
+  const sent = (opts.alreadySent ?? '').replace(/\s+/g, '')
+  const fresh = (q: string) => !alreadyIncluded(q, sent)
   const lines: string[] = []
   const label = rel.status === 'custom' ? rel.customLabel?.trim() || '自定义关系' : RELATION_LABEL[rel.status]
   lines.push(`关系：${label}${rel.source === 'user' ? `（${user}确认）` : '（来自人设原文）'}`)
+  if (opts.changedAfterChat && rel.source === 'user') {
+    lines.push(`这个关系是${user}最近确认或修改的，从现在起以它为准；之前聊天里与它不一致的说法、称呼和相处方式不再适用，也不用特意解释这个变化。`)
+  }
   const g = GUIDE[rel.status]
   if (g) lines.push(g.replace(/对方/g, user))
   if (rel.status === 'custom' && rel.customNote?.trim()) lines.push(rel.customNote.trim().slice(0, 300))
@@ -174,14 +200,23 @@ export function relationshipSection(rel: Relationship, user: string): string {
       `亲密的表达方式由你自己的性格决定：内敛的人就含蓄克制，外向的人就自然外放，嘴硬的人就用嘴硬的方式在意。不要套用统一的甜宠话术，不要每句都表达爱意，不要动不动叫「宝宝」之类的称呼（除非下面的昵称或人设里就是这样叫）。`,
     )
   }
+  if (rel.status === 'lover' || rel.status === 'married') {
+    lines.push('真正的亲密来自熟悉和默契：可以自然地调侃、撒娇、闹小脾气、偶尔吃醋，接住对方的玩笑，记得对方的习惯；不要机械表白，不要强行制造浪漫，程度跟着你的性格和对方当下的回应走。')
+  }
   if (rel.nicknames.forUser.length) lines.push(`你对${user}的称呼：${rel.nicknames.forUser.join('、')}（自然地用，不必每句都叫）`)
   if (rel.nicknames.forChar.length) lines.push(`${user}对你的称呼：${rel.nicknames.forChar.join('、')}`)
-  if (rel.evidence.length) lines.push(`人设原文依据：\n${rel.evidence.slice(0, 3).map((e) => `  · 「${e.quote}」`).join('\n')}`)
-  if (rel.sharedHistory.length) {
-    lines.push(`已有的共同经历（只可提及这些和聊天中真实发生过的事，不要编造新的过往细节）：\n${rel.sharedHistory.slice(0, 6).map((s) => `  · ${s}`).join('\n')}`)
+  const evidence = rel.evidence.slice(0, 3).filter((e) => fresh(e.quote))
+  if (evidence.length) lines.push(`人设原文依据：\n${evidence.map((e) => `  · 「${e.quote}」`).join('\n')}`)
+  const shared = rel.sharedHistory.slice(0, 6)
+  const sharedFresh = shared.filter(fresh)
+  if (sharedFresh.length) {
+    lines.push(`已有的共同经历（只可提及这些、上面人设里写到的和聊天中真实发生过的事，不要编造新的过往细节）：\n${sharedFresh.map((s) => `  · ${s}`).join('\n')}`)
+  } else if (shared.length) {
+    lines.push('你们已有的共同经历写在上面的人设里：只可提及那些和聊天中真实发生过的事，不要编造新的过往细节。')
   } else if (rel.status !== 'stranger') {
     lines.push('人设里没有写具体的共同经历：可以表现出熟悉和默契，但不要编造具体发生过的事件、日期或地点；需要时可以自然地问。')
   }
-  if (rel.habits.length) lines.push(`相处习惯：\n${rel.habits.slice(0, 4).map((s) => `  · ${s}`).join('\n')}`)
+  const habits = rel.habits.slice(0, 4).filter(fresh)
+  if (habits.length) lines.push(`相处习惯：\n${habits.map((s) => `  · ${s}`).join('\n')}`)
   return `【你和${user}的关系】（始终有效，聊多久都不要忘记或改变，除非${user}在聊天中明确改变了它）\n${lines.map((l) => (l.startsWith('关系：') ? l : `· ${l}`)).join('\n')}`
 }

@@ -12,8 +12,10 @@ import { renderAssistantTurn, type ReplyPart } from './messageFormat'
 import { organizedSection } from './organize'
 import { memorySection, pickMemories } from './memory'
 import { formatSection, stickerFrequency, styleSection, type StickerOption } from './style'
-import { layerProfile, pickRelated } from './profile'
-import { effectiveRelationship, relationshipSection } from './relationship'
+import { layerProfile, pickRelated, PROFILE_BUDGET } from './profile'
+import { duplicatedQuotes, effectiveRelationship, RELATION_LABEL, relationshipSection } from './relationship'
+import { personaVoiceSection, turnGuidance, turnGuidanceSection } from './naturalness'
+import { MEMORY_BUDGET } from './memory'
 
 /** 一次最多向模型提供多少个表情包（控制 Token） */
 export const MAX_OFFERED_STICKERS = 24
@@ -27,6 +29,35 @@ export interface ContextBudget {
   worldChars: number
   /** 用于触发世界书关键词的最近消息条数 */
   scanDepth: number
+}
+
+/**
+ * 给用户看的调试信息（「查看发送给 AI 的设定」页面）。全部来自本次实际构建的上下文，不含 API Key 等配置。
+ */
+export interface ContextDebug {
+  /** 本次发送的核心人设字段（原文，未改写） */
+  persona: { label: string; text: string }[]
+  /** 从人设里识别出的说话分寸 */
+  voice: string
+  relationship: {
+    status: string
+    /** user：用户确认 / 修改；auto：从人设原文识别；none：没有识别到 */
+    source: 'user' | 'auto' | 'none'
+    nicknames: string[]
+    /** 用户在已有聊天之后修改过关系 */
+    changedAfterChat: boolean
+    /** 已在人设中出现、因此没有重复发送的原文摘句数 */
+    dedupedQuotes: number
+  }
+  /** 本次召回的长期记忆 */
+  memories: { id: string; kind: string; content: string; pinned: boolean; priority: number }[]
+  /** 本次使用的世界书条目 */
+  lore: { name: string; book: string; constant: boolean }[]
+  /** 这一轮的分寸提示 */
+  guidance: string[]
+  history: { sent: number; total: number; chars: number; exchanges: number }
+  /** 各部分的预算使用情况（字数） */
+  budget: { label: string; used: number; limit: number }[]
 }
 
 export const DEFAULT_BUDGET: ContextBudget = { historyChars: 6000, loreChars: 3000, worldChars: 2000, scanDepth: 6 }
@@ -61,6 +92,7 @@ export interface BuiltContext {
   historyCount: number
   /** 本次允许 AI 使用的表情包：短编号 → 真实 ID（解析回复时据此校验） */
   stickerMap: Map<string, string>
+  debug: ContextDebug
 }
 
 /** 两字片段，用于判断表情包与当前话题的相关程度 */
@@ -206,10 +238,21 @@ export function buildContext(input: ContextInput): BuiltContext {
   field('背景故事', m(layered.core.backstory))
   field(`与${user}的关系`, m(layered.core.relationToUser))
   for (const e of layered.coreExtras) field(e.label, m(e.text))
+  const personaText = parts.join('\n')
+  // 人设里写明的话量、松弛感、内敛等特点 → 具体的表达分寸（识别不到就不写，不套模板）
+  const voice = personaVoiceSection(c)
+  add('说话分寸（来自人设）', voice)
   // 已有关系：每次都发送，保证从第一句话起延续、长期聊天不「失忆」
+  // 用户修改关系后，下一次构建就会读到新的 relationship；如果修改发生在已有聊天之后，额外提醒以新关系为准
   const rel = effectiveRelationship(c)
-  const relText = relationshipSection(rel, user)
+  const changedAfterChat =
+    rel.source === 'user' &&
+    active.some((x) => x.createdAt < rel.updatedAt) &&
+    active.filter((x) => x.senderType === 'user' && x.createdAt > rel.updatedAt).length < 20
+  const relText = relationshipSection(rel, user, { alreadySent: m(personaText), changedAfterChat })
   if (relText) add('关系', m(relText))
+  const dedupedQuotes = relText ? duplicatedQuotes(rel, m(personaText)) : 0
+  skip(`关系原文摘句 ${dedupedQuotes} 句`, dedupedQuotes * 40, '已经原样出现在上面的人设字段里，不重复发送')
   if (related.length) {
     add('与当前话题相关的扩展资料', `【与当前话题相关的角色资料】（节选，供参考）\n${related.map((r) => `· ${r.label}：${m(r.text)}`).join('\n')}`)
   }
@@ -250,11 +293,17 @@ export function buildContext(input: ContextInput): BuiltContext {
   if (c.sourceDoc?.text) skip('导入原文全文', c.sourceDoc.chars, '全文只保存在本机供核对和重新整理；聊天时发送的是上面的字段和要点')
   const exchanges = active.filter((x) => x.senderType === 'user').length
   add('表达偏好', styleSection(c, exchanges, user, rel.status))
+  const guidance = turnGuidance({ active, charName: name, userName: user, nicknames: rel.nicknames.forUser, exchanges })
   const freq = stickerFrequency(c)
   const analyses = input.analyses ?? new Map<string, StickerAnalysis>()
   const offered = freq === 'never' ? { options: [], map: new Map<string, string>() } : offeredStickers(input.stickers ?? [], analyses, recent)
   add(offered.options.length ? `消息格式（含 ${offered.options.length} 个可用表情包）` : '消息格式', formatSection(freq, offered.options))
-  add('结尾提醒', '只依据以上设定和下面真实发生过的聊天内容回应，不要编造你们没有共同经历过的事情；不确定时可以自然地询问。')
+  add('这一轮的分寸', m(turnGuidanceSection(guidance)))
+  add(
+    '结尾提醒',
+    `只依据以上设定和下面真实发生过的聊天内容回应，不要编造你们没有共同经历过的事情；不确定时可以自然地询问。` +
+      `信息有冲突时：${user}确认过的关系和记忆优先，其次是角色人设，再次是世界设定和世界书；聊天记录里你自己说过、但设定中没有的内容，不算事实。`,
+  )
   const stickerById = new Map((input.stickers ?? []).map((st) => [st.id, st]))
   const aliasOf = new Map([...offered.map].map(([a, id]) => [id, a]))
 
@@ -268,6 +317,36 @@ export function buildContext(input: ContextInput): BuiltContext {
     used += len
   }
   report.history = { sent: picked.length, total: active.length }
+  const bookOf = new Map(input.lorebooks.flatMap((b) => b.entries.map((e) => [e.id, b.name] as const)))
+  const coreFields: [string, string][] = [
+    ['角色简介', layered.core.bio],
+    ['性格', layered.core.personality],
+    ['说话风格', layered.core.speakingStyle],
+    ['背景故事', layered.core.backstory],
+    [`与${user}的关系`, layered.core.relationToUser],
+    ...layered.coreExtras.map((e): [string, string] => [e.label, e.text]),
+  ]
+  const charsOf = (label: string) => report.sections.filter((x) => x.label === label || x.label.startsWith(label)).reduce((n, x) => n + x.chars, 0)
+  const debugBase = {
+    persona: coreFields.filter(([, t]) => t).map(([label, text]) => ({ label, text: m(text) })),
+    voice,
+    relationship: {
+      status: rel.status === 'custom' ? rel.customLabel?.trim() || '自定义关系' : RELATION_LABEL[rel.status],
+      source: (rel.status === 'unknown' ? 'none' : rel.source) as ContextDebug['relationship']['source'],
+      nicknames: rel.nicknames.forUser,
+      changedAfterChat,
+      dedupedQuotes,
+    },
+    lore: entries.map((e) => ({ name: e.name, book: bookOf.get(e.id) ?? '', constant: !!e.constant })),
+    guidance,
+    history: { sent: picked.length, total: active.length, chars: used, exchanges },
+    budget: [
+      { label: '聊天记录', used, limit: budget.historyChars },
+      { label: '世界书', used: entries.reduce((n, e) => n + e.content.length, 0), limit: budget.loreChars },
+      { label: '扩展人设资料', used: related.reduce((n, r) => n + r.text.length, 0), limit: PROFILE_BUDGET.related },
+      { label: '长期记忆', used: charsOf('长期记忆'), limit: MEMORY_BUDGET.chars },
+    ],
+  }
 
   // 相邻的同一方消息合并为一轮：用户的多条用空行分隔；角色的多条按消息格式写回，帮助模型保持格式
   const turns: { role: 'user' | 'assistant'; items: Message[] }[] = []
@@ -307,6 +386,10 @@ export function buildContext(input: ContextInput): BuiltContext {
     report,
     historyCount: picked.length,
     stickerMap: offered.map,
+    debug: {
+      ...debugBase,
+      memories: usedMemories.map((x) => ({ id: x.id, kind: x.kind, content: x.content, pinned: !!x.pinned, priority: x.priority ?? 1 })),
+    },
   }
 }
 
