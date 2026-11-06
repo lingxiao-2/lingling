@@ -281,7 +281,7 @@ export function buildContext(input: ContextInput): BuiltContext {
     if (rest > 0) skip(`资料要点 ${rest} 条`, rest * 30, '资料要点每次最多约 1500 字，排在后面的没有发送')
   }
   // 长期记忆：固定 / 重要的常驻，其余按话题挑选
-  const usedMemories = pickMemories((input.memories ?? []).filter((x) => x.characterId === c.id), recent)
+  const usedMemories = pickMemories((input.memories ?? []).filter((x) => x.characterId === c.id), recent, undefined, { worldId: c.worldId, relation: rel.status })
   const memText = memorySection(usedMemories, user)
   if (memText) add(`长期记忆 ${usedMemories.length} 条`, memText)
   const restMem = (input.memories ?? []).filter((x) => x.characterId === c.id && x.status === 'active' && !usedMemories.includes(x))

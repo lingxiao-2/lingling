@@ -66,6 +66,8 @@ export interface Character {
   organized?: OrganizedProfile
   /** 上一次保存整理结果之前的版本（用于一键撤销；prev 为 null 表示之前没有整理过） */
   organizedUndo?: { prev: OrganizedProfile | null; savedAt: number }
+  /** 长期记忆设置，见 services/ai/autoMemory.ts */
+  memoryPrefs?: MemoryPrefs
   createdAt: number
   updatedAt: number
 }
@@ -185,6 +187,8 @@ export type MemoryKind =
   | 'world' // 世界观资料（保留：旧结构）
   | 'event' // 重要共同经历（真实发生在聊天中，或用户写下的）
   | 'recent' // 最近聊天事件（较短期，优先级低）
+  | 'preference' // 用户的长期偏好（喜欢 / 讨厌 / 习惯）
+  | 'promise' // 两人之间的重要约定
 
 export interface Memory {
   id: string
@@ -209,6 +213,26 @@ export interface Memory {
   /** 来源消息原文摘录（用户可核对） */
   quote?: string
   lastUsedAt?: number
+  /** 保存时角色所在的世界（世界线）。角色换到别的世界后，这条记忆不再发送，避免设定混在一起；旧数据没有该字段，视为通用 */
+  worldId?: string
+  /** 同一件事在聊天中被再次提到的次数（自动去重时只合并依据，不改写内容） */
+  mentions?: number
+}
+
+/** 每个角色的记忆设置（均可选；旧角色没有时按默认值） */
+export interface MemoryPrefs {
+  /** 聊天中说「记住……」时自动保存（默认开启：这是用户明确的要求） */
+  rememberRequests?: boolean
+  /** 定期让 AI 从聊天中提取记忆候选（默认关闭；开启即表示用户同意把最近聊天发送给自己配置的 AI 服务） */
+  autoExtract?: boolean
+  /** 同意开启自动提取的时间 */
+  autoConsentAt?: number
+  /** 允许把健康、财务等敏感内容作为候选保存（默认关闭：自动提取到的敏感内容直接丢弃，不写入） */
+  allowSensitive?: boolean
+  /** 上一次自动提取覆盖到的消息时间 */
+  lastExtractedAt?: number
+  /** 上一次自动提取的结果说明（失败原因等），只用于显示 */
+  lastNote?: string
 }
 
 /* ---------- 朋友圈 / 表情（只建结构，V0.2 完善） ---------- */
