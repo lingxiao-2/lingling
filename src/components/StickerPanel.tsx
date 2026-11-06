@@ -10,6 +10,7 @@ import { Icon } from '../theme/icons'
 import { ActionSheet } from './Sheet'
 import { StickerPicture } from './StickerView'
 import LinkImport from './LinkImport'
+import BatchTextImport from './BatchTextImport'
 import type { Sticker, StickerAnalysis } from '../db/schema'
 import { addSticker, deleteSticker, existingStickerHashes, listStickers, updateSticker } from '../db/stickerRepo'
 import { prepareStickerBytes, isSafeStickerSrc } from '../services/stickers'
@@ -104,6 +105,8 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
   const [preview, setPreview] = useState<Sticker | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [linkOpen, setLinkOpen] = useState(false)
+  const [batchOpen, setBatchOpen] = useState(false)
+  const [q, setQ] = useState('')
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [result, setResult] = useState<StickerImportResult | null>(null)
   const imgRef = useRef<HTMLInputElement>(null)
@@ -111,12 +114,19 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
 
   const packs = useMemo(() => [...new Set(stickers.map((s) => s.packId).filter((p) => p !== 'mine'))], [stickers])
   const shown = useMemo(() => {
-    const list = [...stickers]
+    const kw = q.trim().toLowerCase()
+    // 搜索：按名称和识图结果（含义、文字）匹配
+    const list = kw
+      ? stickers.filter((s) => {
+          const a = s.hash ? analyses.get(s.hash) : undefined
+          return `${s.name} ${a?.summary ?? ''} ${a?.text ?? ''}`.toLowerCase().includes(kw)
+        })
+      : [...stickers]
     if (tab === 'recent') return list.filter((s) => s.lastUsedAt).sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0)).slice(0, 30)
     if (tab === 'fav') return list.filter((s) => s.favorite).sort((a, b) => b.updatedAt - a.updatedAt)
     if (tab.startsWith('pack:')) return list.filter((s) => s.packId === tab.slice(5)).sort((a, b) => a.createdAt - b.createdAt)
     return list.sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.createdAt - a.createdAt)
-  }, [stickers, tab])
+  }, [stickers, tab, q, analyses])
 
   const runImport = async (files: File[]) => {
     if (!files.length) return // 用户取消选择
@@ -164,6 +174,16 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
           </button>
         ))}
       </div>
+      {stickers.length > 8 && (
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="搜索表情包名称"
+          aria-label="搜索表情包"
+          className="mb-1.5 w-full h-7 rounded-full bg-white/50 border border-white/60 px-3 text-[16px] leading-none outline-none placeholder:text-[11.5px] placeholder:text-[#8a98b3]"
+          style={{ fontSize: 16 }}
+        />
+      )}
       {progress ? (
         <div className="py-6 px-3 text-center text-[12px] text-[#5a6a86]">
           正在导入 {progress.done} / {progress.total}
@@ -173,7 +193,7 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
         </div>
       ) : (
         <div className="grid grid-cols-5 gap-1.5 max-h-[200px] overflow-y-auto">
-          {tab === 'all' && (
+          {tab === 'all' && !q.trim() && (
             <button
               aria-label="添加表情"
               onClick={() => setAddOpen(true)}
@@ -216,6 +236,7 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
             { label: '从相册或文件选择', hint: '可以一次选很多张，支持 PNG / JPEG / WebP / GIF', icon: <Icon name="image" />, onClick: () => imgRef.current?.click() },
             { label: '导入 ZIP 表情合集', hint: '解压后按合集分类，重复的图片会自动跳过', icon: <Icon name="import" />, onClick: () => zipRef.current?.click() },
             { label: '通过链接导入', hint: '粘贴图片、ZIP 或公开网页的链接', icon: <Icon name="link" />, onClick: () => setLinkOpen(true) },
+            { label: '批量文本导入', hint: '粘贴多行「名称：图片链接」，一次导入很多张并保存名称', icon: <Icon name="paste" />, onClick: () => setBatchOpen(true) },
           ]}
         />
         </Layer>
@@ -225,6 +246,15 @@ export default function StickerPanel({ onSend, toast }: { onSend: (s: Sticker) =
           onClose={() => setLinkOpen(false)}
           onDone={(r) => {
             setLinkOpen(false)
+            setResult(r)
+          }}
+        />
+      )}
+      {batchOpen && (
+        <BatchTextImport
+          onClose={() => setBatchOpen(false)}
+          onDone={(r) => {
+            setBatchOpen(false)
             setResult(r)
           }}
         />

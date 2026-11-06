@@ -47,7 +47,7 @@ export async function addSticker(p: PreparedSticker, name = '', packId = 'mine')
   const s: Sticker = {
     id: uid('stk'),
     packId,
-    name: name.trim().slice(0, 20),
+    name: name.trim().slice(0, 40),
     thumbUrl: p.thumbUrl,
     hash: p.hash,
     mime: p.mime,
@@ -68,7 +68,7 @@ export async function addSticker(p: PreparedSticker, name = '', packId = 'mine')
 
 export async function updateSticker(id: string, patch: Partial<Pick<Sticker, 'name' | 'favorite' | 'aiUsable'>>) {
   const p = { ...patch }
-  if (p.name !== undefined) p.name = p.name.trim().slice(0, 20)
+  if (p.name !== undefined) p.name = p.name.trim().slice(0, 40)
   await db.stickers.update(id, { ...p, updatedAt: Date.now() })
 }
 
