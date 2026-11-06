@@ -13,6 +13,9 @@ import PhotoViewerPage from './pages/album/PhotoViewerPage'
 import DiaryListPage from './pages/diary/DiaryListPage'
 import DiaryEditorPage from './pages/diary/DiaryEditorPage'
 import DiaryTrashPage from './pages/diary/DiaryTrashPage'
+import NotesListPage from './pages/notes/NotesListPage'
+import NoteEditorPage from './pages/notes/NoteEditorPage'
+import NotesTrashPage from './pages/notes/NotesTrashPage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
 import MomentComposePage from './pages/MomentComposePage'
@@ -65,6 +68,9 @@ export default function App() {
       <Route path="diary" element={<DiaryListPage />} />
       <Route path="diary/trash" element={<DiaryTrashPage />} />
       <Route path="diary/:id" element={<DiaryEditorPage />} />
+      <Route path="notes" element={<NotesListPage />} />
+      <Route path="notes/trash" element={<NotesTrashPage />} />
+      <Route path="notes/:id" element={<NoteEditorPage />} />
       <Route element={<TabLayout />}>
         <Route path="messages" element={<MessagesPage />} />
         <Route path="contacts" element={<ContactsPage />} />

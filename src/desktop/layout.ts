@@ -16,7 +16,7 @@ export type WidgetSize = 'small' | 'medium'
 
 export type DesktopItem =
   | { kind: 'app'; app: AppId }
-  | { kind: 'widget'; id: string; widget: WidgetKind; size: WidgetSize; characterId?: string }
+  | { kind: 'widget'; id: string; widget: WidgetKind; size: WidgetSize; characterId?: string; noteId?: string }
 
 export interface DesktopLayout {
   version: number
@@ -91,7 +91,7 @@ export function normalizeLayout(raw: unknown): DesktopLayout {
         out.push({ kind: 'app', app: x.app })
       } else if (x?.kind === 'widget' && ['clock', 'music', 'note', 'character'].includes(x.widget) && typeof x.id === 'string' && !seenWidget.has(x.id)) {
         seenWidget.add(x.id)
-        out.push({ kind: 'widget', id: x.id, widget: x.widget, size: x.size === 'medium' ? 'medium' : 'small', ...(x.characterId ? { characterId: String(x.characterId) } : {}) })
+        out.push({ kind: 'widget', id: x.id, widget: x.widget, size: x.size === 'medium' ? 'medium' : 'small', ...(x.characterId ? { characterId: String(x.characterId) } : {}), ...(x.noteId ? { noteId: String(x.noteId) } : {}) })
       }
       if (!fits(out)) out.pop()
     }
@@ -133,6 +133,14 @@ export function migrateToV2(l: DesktopLayout): DesktopLayout {
     }
   }
   return { ...l, version: 2, pages }
+}
+
+/** 设置便签小组件显示的便签 */
+export function setWidgetNote(l: DesktopLayout, widgetId: string, noteId: string | undefined): DesktopLayout {
+  return {
+    ...l,
+    pages: l.pages.map((p) => p.map((it) => (it.kind === 'widget' && it.id === widgetId ? { ...it, noteId } : it))),
+  }
 }
 
 /** 设置角色小组件显示的角色 */

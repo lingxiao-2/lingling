@@ -12,6 +12,7 @@ import { Icon } from '../theme/icons'
 import { db } from '../db/db'
 import type { DesktopItem } from './layout'
 import { useDesktopNote } from './layoutStore'
+import { colorOf, previewLines } from '../life/notes'
 
 type Widget = Extract<DesktopItem, { kind: 'widget' }>
 
@@ -104,20 +105,40 @@ function MusicWidget() {
   )
 }
 
-/** 便签：珍珠白信纸，顶端一小段半透明丝带胶带 */
-function NoteWidget() {
-  const note = useDesktopNote()
+/**
+ * 便签：显示「便签」应用里指定的那一张（实时同步）。便签被删除时显示空状态；
+ * 还没有迁移的旧版桌面便签文字照常显示。
+ */
+function NoteWidget({ noteId }: { noteId?: string }) {
+  const note = useLiveQuery(async () => (noteId ? (await db.notes.get(noteId)) ?? null : null), [noteId])
+  const legacy = useDesktopNote()
+  const c = colorOf(note?.color)
+  const lines = note && !note.deletedAt ? previewLines(note, 5) : []
+  const gone = !!noteId && (note === null || !!note?.deletedAt)
   return (
     <Shell label="便签小组件" className="desk-paper flex flex-col px-3 pt-2.5 pb-2">
+      {note && !note.deletedAt && <span className="absolute inset-0 -z-0 opacity-90" style={{ background: c.bg }} aria-hidden />}
       <span className="desk-tape" aria-hidden />
-      <div className="flex items-center justify-between">
+      <div className="relative flex items-center justify-between">
         <span className="desk-serif italic text-[12px] tracking-[0.06em] text-[#6f88a8]">Memo</span>
-        <span className="text-[10px] tracking-[0.2em] text-[#93a5bc]">便签</span>
+        <span className="text-[10px] tracking-[0.2em] text-[#93a5bc]">{note?.pinned && !note.deletedAt ? '置顶 · ' : ''}便签</span>
       </div>
-      {note?.text ? (
-        <div className="mt-[7px] flex-1 min-h-0 overflow-hidden whitespace-pre-wrap break-words text-[12px] leading-[18.5px] text-[#3f5674] desk-note-fade">{note.text}</div>
+      {note && !note.deletedAt ? (
+        <div className="relative mt-[7px] flex-1 min-h-0 overflow-hidden text-[12px] leading-[18.5px] desk-note-fade" style={{ color: c.ink }}>
+          {note.title && <div className="truncate font-medium">{note.title}</div>}
+          {lines.map((l, i) => (
+            <div key={i} className={`truncate ${l.done ? 'line-through opacity-50' : ''}`}>
+              {note.kind === 'checklist' ? (l.done ? '☑ ' : '☐ ') : ''}
+              {l.text}
+            </div>
+          ))}
+        </div>
+      ) : gone ? (
+        <div className="relative mt-[7px] flex-1 text-[11.5px] leading-[18.5px] text-[#93a5bc]">这张便签已删除，点按选择另一张</div>
+      ) : !noteId && legacy?.text ? (
+        <div className="relative mt-[7px] flex-1 min-h-0 overflow-hidden whitespace-pre-wrap break-words text-[12px] leading-[18.5px] text-[#3f5674] desk-note-fade">{legacy.text}</div>
       ) : (
-        <div className="mt-[7px] flex-1 text-[11.5px] leading-[18.5px] text-[#93a5bc]">点按写一句话，只保存在这台设备上</div>
+        <div className="relative mt-[7px] flex-1 text-[11.5px] leading-[18.5px] text-[#93a5bc]">点按写一张便签，只保存在这台设备上</div>
       )}
     </Shell>
   )
@@ -154,6 +175,6 @@ function CharacterWidget({ characterId }: { characterId?: string }) {
 export function WidgetView({ item }: { item: Widget }) {
   if (item.widget === 'clock') return <ClockWidget />
   if (item.widget === 'music') return <MusicWidget />
-  if (item.widget === 'note') return <NoteWidget />
+  if (item.widget === 'note') return <NoteWidget noteId={item.noteId} />
   return <CharacterWidget characterId={item.characterId} />
 }

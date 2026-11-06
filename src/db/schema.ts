@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 6
+export const DB_SCHEMA_VERSION = 7
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -496,6 +496,29 @@ export interface Diary {
   deletedAt?: number
 }
 
+/* ---------- 生活应用：便签（v7） ---------- */
+export type NoteColor = 'pearl' | 'ice' | 'mist' | 'lilac' | 'blush' | 'mint'
+
+export interface NoteItem {
+  id: string
+  text: string
+  done: boolean
+}
+
+export interface Note {
+  id: string
+  title: string
+  /** text：普通文字；checklist：清单 */
+  kind: 'text' | 'checklist'
+  text: string
+  items: NoteItem[]
+  color: NoteColor
+  pinned: boolean
+  createdAt: number
+  updatedAt: number
+  deletedAt?: number
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -515,6 +538,7 @@ export class LinglingDB extends Dexie {
   photos!: Table<Photo, string>
   photoBlobs!: Table<PhotoBlob, string>
   diaries!: Table<Diary, string>
+  notes!: Table<Note, string>
 
   constructor() {
     super('lingling-ai')
@@ -570,6 +594,10 @@ export class LinglingDB extends Dexie {
     // v6：生活应用「日记」。只新增一张表，不修改已有数据。
     this.version(6).stores({
       diaries: 'id, date, updatedAt, deletedAt',
+    })
+    // v7：生活应用「便签」。只新增一张表；旧的桌面便签（settings 中的 desktop-note）在第一次打开时复制成一张便签，原记录保留。
+    this.version(7).stores({
+      notes: 'id, pinned, updatedAt, deletedAt',
     })
   }
 }
