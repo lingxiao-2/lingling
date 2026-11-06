@@ -14,9 +14,11 @@ permissions:
   pages: write
   id-token: write
 
+# 每个分支 / PR 各自一组：同一个 PR 的新提交会取消旧的检查；main 上的运行从不被取消。
+# （以前所有运行共用一组 pages 并且会互相取消：PR 的检查曾在 main 发布完成的那一刻把发布任务标记为「已取消」。）
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -44,6 +46,10 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # 发布到 GitHub Pages 时排队依次进行，不取消正在进行的发布
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
