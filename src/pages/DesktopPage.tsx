@@ -1,83 +1,244 @@
 /**
- * 虚拟手机桌面：三个横向滑动的桌面页 + 页面指示器 + 固定 Dock。
- *  - 横向滑动使用原生滚动 + scroll-snap（iOS Safari 上最可靠、最省电的触摸滑动方式），每次只翻一页
- *  - Dock 在滑动容器之外，始终固定
- *  - 点开应用进入原有页面（浏览器返回即回到桌面，并停在原来那一页）
+ * 虚拟手机桌面：三个横向滑动的桌面页 + 页面指示器 + 固定 Dock + 编辑模式。
+ *
+ *  - 横向滑动：原生滚动 + scroll-snap（iOS Safari 上最可靠、最省电），每次只翻一页
+ *  - 长按图标约 0.5 秒进入编辑模式（手指移动超过 10px 视为滑动，不会进入编辑）；进入编辑的那次按压不会打开应用
+ *  - 编辑模式：图标轻微晃动；按住图标拖动可以调整位置、拖进 Dock、拖到屏幕边缘停一下翻到相邻页；点按不会打开应用
+ *  - 布局、顺序和当前页保存在本机（settings 表的 desktop-layout），刷新后不变；可以恢复默认布局
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppIcon from '../desktop/AppIcon'
 import { appHref, APPS, type AppId } from '../desktop/apps'
-import { defaultLayout, GRID, type DesktopItem, type DesktopLayout } from '../desktop/layout'
+import { defaultLayout, GRID, itemAt, moveItem, type DesktopItem, type DesktopLayout, type Slot } from '../desktop/layout'
+import { loadLayout, resetLayout, saveLayout, savePage, useDesktopLayout } from '../desktop/layoutStore'
 import { useUnreadTotal } from '../desktop/useUnread'
+import { ConfirmDialog } from '../components/Sheet'
 
-const PAGE_KEY = 'lingling-desktop-page'
+export const LONG_PRESS_MS = 480
+const MOVE_CANCEL = 10
+const DRAG_START = 6
+const EDGE = 22
+const EDGE_HOLD_MS = 550
 
-function readPage(): number {
-  try {
-    const n = Number(sessionStorage.getItem(PAGE_KEY))
-    return Number.isInteger(n) && n >= 0 && n < GRID.pages ? n : 0
-  } catch {
-    return 0
+const slotKey = (s: Slot | null) => (s ? (s.area === 'dock' ? `d${s.index}` : `p${s.page}-${s.index}`) : '')
+
+function readSlot(el: Element | null): Slot | null {
+  const t = el?.closest<HTMLElement>('[data-slot]')
+  if (t) {
+    const [area, a, b] = (t.dataset.slot ?? '').split(':')
+    return area === 'dock' ? { area: 'dock', index: Number(a) } : { area: 'page', page: Number(a), index: Number(b) }
   }
+  return null
 }
 
 /** 小组件占位（小组件本身在后续版本接入） */
-function WidgetSlot({ item }: { item: Extract<DesktopItem, { kind: 'widget' }> }) {
-  return <div className={`${item.size === 'medium' ? 'col-span-4' : 'col-span-2'} row-span-2 m-1.5 rounded-[22px] glass-1`} />
+function WidgetBox({ item }: { item: Extract<DesktopItem, { kind: 'widget' }> }) {
+  return <div className="h-full w-full rounded-[22px] glass-1" aria-label={`小组件 ${item.widget}`} />
 }
 
-export function DesktopGrid({ items, renderApp }: { items: DesktopItem[]; renderApp: (id: AppId) => ReactNode }) {
-  return (
-    <div className="h-full grid grid-cols-4" style={{ gridTemplateRows: `repeat(${GRID.rows}, minmax(0, 1fr))` }}>
-      {items.map((it) => (it.kind === 'app' ? <div key={it.app} className="flex items-start justify-center pt-1">{renderApp(it.app)}</div> : <WidgetSlot key={it.id} item={it} />))}
-    </div>
-  )
+interface Press {
+  id: number
+  x: number
+  y: number
+  slot: Slot
+  timer?: ReturnType<typeof setTimeout>
+}
+
+interface Drag {
+  from: Slot
+  item: DesktopItem
+  x: number
+  y: number
+  over: Slot | null
 }
 
 export default function DesktopPage() {
   const nav = useNavigate()
   const unread = useUnreadTotal()
-  const [layout] = useState<DesktopLayout>(() => ({ ...defaultLayout(), page: readPage() }))
-  const [page, setPage] = useState(layout.page)
+  const saved = useDesktopLayout()
+  const [fallback] = useState(defaultLayout)
+  const layout: DesktopLayout = saved ?? fallback
+  const [page, setPageState] = useState(layout.page)
+  const [editing, setEditing] = useState(false)
+  const [drag, setDrag] = useState<Drag | null>(null)
+  const [confirmReset, setConfirmReset] = useState(false)
   const pager = useRef<HTMLDivElement>(null)
+  const press = useRef<Press | null>(null)
+  const suppressClick = useRef(false)
+  const edgeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const scrollTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const restored = useRef(false)
 
-  // 回到桌面时停在原来那一页
-  useLayoutEffect(() => {
-    const el = pager.current
-    if (el) el.scrollLeft = el.clientWidth * layout.page
-  }, [layout.page])
-
+  // 第一次进入：生成并保存默认布局（以后不会再覆盖）
   useEffect(() => {
-    try {
-      sessionStorage.setItem(PAGE_KEY, String(page))
-    } catch {
-      /* 隐私模式：只是不记住页码 */
-    }
-  }, [page])
+    void loadLayout()
+  }, [])
+
+  // 读取到保存的布局后，停在上次的那一页（只做一次）
+  useLayoutEffect(() => {
+    if (!saved || restored.current) return
+    restored.current = true
+    const el = pager.current
+    if (el) el.scrollLeft = el.clientWidth * saved.page
+    setPageState(saved.page)
+  }, [saved])
+
+  useEffect(() => () => {
+    clearTimeout(edgeTimer.current)
+    clearTimeout(scrollTimer.current)
+    clearTimeout(press.current?.timer)
+  }, [])
+
+  const commit = (next: DesktopLayout | null) => {
+    if (next && next !== layout) void saveLayout(next)
+  }
 
   const onScroll = () => {
     const el = pager.current
     if (!el || !el.clientWidth) return
-    const p = Math.round(el.scrollLeft / el.clientWidth)
-    if (p !== page) setPage(Math.min(Math.max(p, 0), GRID.pages - 1))
+    const p = Math.min(Math.max(Math.round(el.scrollLeft / el.clientWidth), 0), GRID.pages - 1)
+    if (p !== page) setPageState(p)
+    clearTimeout(scrollTimer.current)
+    scrollTimer.current = setTimeout(() => {
+      if (saved && restored.current) void savePage(p)
+    }, 300)
   }
   const goPage = (p: number) => pager.current?.scrollTo({ left: p * pager.current.clientWidth, behavior: 'smooth' })
 
-  const open = (id: AppId) => nav(appHref(id))
-  const icon = (id: AppId) => (
-    <button key={id} aria-label={APPS[id].name} className="press" onClick={() => open(id)}>
-      <AppIcon id={id} badge={id === 'messages' ? unread : 0} />
-    </button>
-  )
+  /* ---------- 按压、长按、拖动 ---------- */
+  const onPointerDown = (e: ReactPointerEvent, slot: Slot) => {
+    if (e.button !== 0 || press.current) return
+    press.current = { id: e.pointerId, x: e.clientX, y: e.clientY, slot }
+    if (!editing) {
+      press.current.timer = setTimeout(() => {
+        setEditing(true)
+        suppressClick.current = true
+        navigator.vibrate?.(8)
+      }, LONG_PRESS_MS)
+    } else {
+      ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+    }
+  }
+
+  const onPointerMove = (e: ReactPointerEvent) => {
+    const p = press.current
+    if (!p || p.id !== e.pointerId) return
+    const dist = Math.hypot(e.clientX - p.x, e.clientY - p.y)
+    if (!editing) {
+      // 手指在动：这是滑动，不是长按
+      if (dist > MOVE_CANCEL) {
+        clearTimeout(p.timer)
+        press.current = null
+      }
+      return
+    }
+    if (!drag && dist < DRAG_START) return
+    const item = itemAt(layout, p.slot)
+    if (!item) return
+    const over = readSlot(document.elementFromPoint(e.clientX, e.clientY)) ?? dropAreaAt(e.clientX, e.clientY)
+    setDrag({ from: p.slot, item, x: e.clientX, y: e.clientY, over })
+    // 拖到屏幕边缘停一下：翻到相邻页
+    const nearEdge = e.clientX < EDGE ? -1 : e.clientX > window.innerWidth - EDGE ? 1 : 0
+    if (nearEdge && !edgeTimer.current) {
+      edgeTimer.current = setTimeout(() => {
+        edgeTimer.current = undefined
+        const target = page + nearEdge
+        if (target >= 0 && target < GRID.pages) goPage(target)
+      }, EDGE_HOLD_MS)
+    } else if (!nearEdge && edgeTimer.current) {
+      clearTimeout(edgeTimer.current)
+      edgeTimer.current = undefined
+    }
+  }
+
+  /** 指针下面不是图标时：落在某一页的空白处 → 放到这一页最后；落在 Dock 空白处 → 放到 Dock 最后 */
+  const dropAreaAt = (x: number, y: number): Slot | null => {
+    const el = document.elementFromPoint(x, y)
+    const area = el?.closest<HTMLElement>('[data-drop]')
+    if (!area) return null
+    if (area.dataset.drop === 'dock') return { area: 'dock', index: layout.dock.length }
+    const pg = Number(area.dataset.drop)
+    return { area: 'page', page: pg, index: layout.pages[pg]?.length ?? 0 }
+  }
+
+  const endPress = (e: ReactPointerEvent, cancelled: boolean) => {
+    const p = press.current
+    if (!p || p.id !== e.pointerId) return
+    clearTimeout(p.timer)
+    clearTimeout(edgeTimer.current)
+    edgeTimer.current = undefined
+    press.current = null
+    if (drag) {
+      if (!cancelled && drag.over) commit(moveItem(layout, drag.from, drag.over))
+      setDrag(null)
+      suppressClick.current = true
+    }
+  }
+
+  const onClickItem = (id: AppId) => {
+    if (suppressClick.current || editing) {
+      suppressClick.current = false
+      return
+    }
+    nav(appHref(id))
+  }
+
+  const handlers = (slot: Slot) => ({
+    'data-slot': slot.area === 'dock' ? `dock:${slot.index}` : `page:${slot.page}:${slot.index}`,
+    onPointerDown: (e: ReactPointerEvent) => onPointerDown(e, slot),
+    onPointerMove,
+    onPointerUp: (e: ReactPointerEvent) => endPress(e, false),
+    onPointerCancel: (e: ReactPointerEvent) => endPress(e, true),
+    onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
+  })
+
+  const dragging = (s: Slot) => !!drag && slotKey(drag.from) === slotKey(s)
+  const isOver = (s: Slot) => !!drag && slotKey(drag.over) === slotKey(s) && !dragging(s)
+  const cellClass = (s: Slot) =>
+    `${editing ? 'desk-wiggle touch-none' : ''} ${dragging(s) ? 'opacity-25' : ''} ${isOver(s) ? 'desk-target' : ''}`
+
+  const renderItem = (it: DesktopItem, s: Extract<Slot, { area: 'page' }>): ReactNode => {
+    if (it.kind === 'widget') {
+      return (
+        <div key={it.id} {...handlers(s)} className={`${it.size === 'medium' ? 'col-span-4' : 'col-span-2'} row-span-2 p-1.5 ${cellClass(s)}`}>
+          <WidgetBox item={it} />
+        </div>
+      )
+    }
+    return (
+      <div key={it.app} className="flex items-start justify-center pt-1">
+        <button {...handlers(s)} aria-label={APPS[it.app].name} className={`press ${cellClass(s)}`} onClick={() => onClickItem(it.app)}>
+          <AppIcon id={it.app} badge={it.app === 'messages' ? unread : 0} />
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div className="h-dvh flex flex-col overflow-hidden" style={{ paddingTop: 'calc(var(--safe-top) + 14px)' }}>
-      <div ref={pager} onScroll={onScroll} className="desk-pager flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden" aria-label="桌面">
+    <div className="desk h-dvh flex flex-col overflow-hidden relative" style={{ paddingTop: 'calc(var(--safe-top) + 14px)' }} data-editing={editing || undefined}>
+      {editing && (
+        <div className="absolute left-0 right-0 z-20 flex justify-between px-4" style={{ top: 'calc(var(--safe-top) + 4px)' }}>
+          <button className="press h-8 px-3.5 rounded-full glass-3 text-[13px] text-[var(--c-text-2)]" onClick={() => setConfirmReset(true)}>
+            恢复默认
+          </button>
+          <button className="press h-8 px-4 rounded-full bg-[var(--c-accent)] text-white text-[13px]" onClick={() => setEditing(false)}>
+            完成
+          </button>
+        </div>
+      )}
+      <div
+        ref={pager}
+        onScroll={onScroll}
+        className={`desk-pager flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden ${editing ? 'pt-8' : ''}`}
+        aria-label="桌面"
+      >
         {layout.pages.map((items, i) => (
-          <section key={i} className="desk-page w-full shrink-0 h-full px-[18px]" aria-label={`第 ${i + 1} 页`} aria-hidden={i !== page}>
-            <DesktopGrid items={items} renderApp={icon} />
+          <section key={i} data-drop={i} className="desk-page w-full shrink-0 h-full px-[18px]" aria-label={`第 ${i + 1} 页`} aria-hidden={i !== page}>
+            <div className="h-full grid grid-cols-4" style={{ gridTemplateRows: `repeat(${GRID.rows}, minmax(0, 1fr))` }}>
+              {items.map((it, index) => renderItem(it, { area: 'page', page: i, index }))}
+            </div>
           </section>
         ))}
       </div>
@@ -96,16 +257,37 @@ export default function DesktopPage() {
       </div>
 
       <nav className="shrink-0 px-3" style={{ paddingBottom: 'calc(var(--safe-bottom) + 8px)' }} aria-label="Dock">
-        <div className="desk-dock h-[88px] rounded-[32px] grid grid-cols-4 items-center px-2">
-          {layout.dock.map((id) => (
-            <div key={id} className="flex justify-center">
-              <button aria-label={APPS[id].name} className="press" onClick={() => open(id)}>
-                <AppIcon id={id} badge={id === 'messages' ? unread : 0} showLabel={false} />
-              </button>
-            </div>
-          ))}
+        <div data-drop="dock" className={`desk-dock h-[88px] rounded-[32px] grid grid-cols-4 items-center px-2 ${drag && drag.over?.area === 'dock' ? 'desk-dock-over' : ''}`}>
+          {layout.dock.map((id, index) => {
+            const s: Slot = { area: 'dock', index }
+            return (
+              <div key={id} className="flex justify-center">
+                <button {...handlers(s)} aria-label={APPS[id].name} className={`press ${cellClass(s)}`} onClick={() => onClickItem(id)}>
+                  <AppIcon id={id} badge={id === 'messages' ? unread : 0} showLabel={false} />
+                </button>
+              </div>
+            )
+          })}
         </div>
       </nav>
+
+      {drag && (
+        <div className="fixed z-50 pointer-events-none" style={{ left: drag.x, top: drag.y, transform: 'translate(-50%, -60%) scale(1.12)' }} aria-hidden>
+          {drag.item.kind === 'app' ? <AppIcon id={drag.item.app} showLabel={false} /> : <div className="h-[60px] w-[120px] rounded-[18px] glass-1" />}
+        </div>
+      )}
+      {confirmReset && (
+        <ConfirmDialog
+          title="恢复默认桌面布局？"
+          message="只会重置桌面上图标和小组件的位置，不会影响角色、聊天、动态、记忆等任何数据。"
+          confirmText="恢复默认"
+          onCancel={() => setConfirmReset(false)}
+          onConfirm={() => {
+            setConfirmReset(false)
+            void resetLayout().then(() => goPage(0))
+          }}
+        />
+      )}
     </div>
   )
 }

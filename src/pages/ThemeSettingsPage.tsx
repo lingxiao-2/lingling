@@ -5,6 +5,8 @@ import NavBar from '../components/NavBar'
 import Avatar from '../components/Avatar'
 import { chatWallpaperOf, wallpaperStyle } from '../components/Wallpaper'
 import { GhostButton, Row, Section, SectionTitle } from '../components/ui'
+import { ConfirmDialog } from '../components/Sheet'
+import { resetLayout } from '../desktop/layoutStore'
 import { Icon } from '../theme/icons'
 import {
   CHAT_FONTS,
@@ -225,6 +227,8 @@ function ColorRow({ label, value, onChange }: { label: string; value: string; on
 }
 
 export default function ThemeSettingsPage() {
+  const [askReset, setAskReset] = useState(false)
+  const [resetDone, setResetDone] = useState(false)
   const nav = useNavigate()
   const theme = useThemeSettings()
   const profile = useProfile()
@@ -351,6 +355,24 @@ export default function ThemeSettingsPage() {
           />
           <Row label="角色头像" value="在角色资料 → 编辑中更换" onClick={() => nav('/contacts')} right={<Icon name="forward" size="sm" />} />
         </div>
+
+        <SectionTitle en="Home Screen" zh="桌面" />
+        <div className="mx-4 card overflow-hidden">
+          <Row label="恢复默认桌面布局" value={resetDone ? '已恢复' : '只重置图标位置'} onClick={() => setAskReset(true)} right={<Icon name="forward" size="sm" />} />
+        </div>
+        <p className="mx-6 mt-2 text-[11px] leading-relaxed text-[var(--c-text-3)]">桌面布局出问题时使用。不会影响角色、聊天、动态、记忆等任何数据。也可以在桌面长按图标后点「恢复默认」。</p>
+        {askReset && (
+          <ConfirmDialog
+            title="恢复默认桌面布局？"
+            message="只会重置桌面上图标和小组件的位置，不会影响其他数据。"
+            confirmText="恢复默认"
+            onCancel={() => setAskReset(false)}
+            onConfirm={() => {
+              setAskReset(false)
+              void resetLayout().then(() => setResetDone(true))
+            }}
+          />
+        )}
 
         <Section title="即将开放">
           <Row label="自定义图标图片" value="后续版本" />
