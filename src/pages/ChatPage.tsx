@@ -239,6 +239,10 @@ export default function ChatPage() {
     if (reply.visionNote) showToast(reply.visionNote)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reply.visionNote])
+  useEffect(() => {
+    if (reply.toolNote) showToast(reply.toolNote)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reply.toolNote])
 
   const focused = useRef(false)
   useEffect(() => {

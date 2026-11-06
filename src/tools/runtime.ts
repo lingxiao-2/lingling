@@ -11,9 +11,11 @@ import type { Authorizer } from './executor'
 import { getMode, getPermissions } from './permissions'
 import { toolRegistry, type ToolDefinition } from './registry'
 import { registerLifeTools } from './lifeTools'
+import { registerMemoryTools } from './memoryTools'
 
 // 生活应用工具：只有在角色被授予对应权限后才会提供给模型
 registerLifeTools(toolRegistry)
+registerMemoryTools(toolRegistry)
 
 export function toolCallingSupported(config: AIConfig): boolean {
   return config.service !== 'lingling'

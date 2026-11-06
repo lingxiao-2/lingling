@@ -43,6 +43,8 @@ export interface ReplyState {
   toolLabel?: string
   /** 识图没有成功时的说明（不影响回复，回复会按「没看懂图片」处理） */
   visionNote?: string
+  /** 本次回复实际使用过的工具（例如「沈星回 查看了你的日程」），让「始终允许」的读取也有提示 */
+  toolNote?: string
 }
 
 const IDLE: ReplyState = { status: 'idle', partial: '' }
@@ -166,6 +168,7 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
   let pump: Promise<void> = Promise.resolve()
   let save: ((part: ReplyPart, index: number) => Promise<void>) | null = null
   let visionNote: string | undefined
+  const usedTools: string[] = []
   flushers.set(convId, () => {
     flushing = true
     wake()
@@ -282,10 +285,12 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
             if (r.toolCalls.length && specs) prefix = raw.trim() ? `${raw}\n` : ''
             return r
           },
-          onTool: (ev) =>
+          onTool: (ev) => {
+            if (ev.phase === 'end' && ev.ok && !usedTools.includes(ev.label)) usedTools.push(ev.label)
             set(convId, ev.phase === 'start'
               ? { status: 'generating', partial: current, delivered, regenerating: regenerateFamily, phase: 'tool', toolLabel: ev.label }
-              : { status: 'generating', partial: current, delivered, regenerating: regenerateFamily }),
+              : { status: 'generating', partial: current, delivered, regenerating: regenerateFamily })
+          },
         })
       }
     } catch (e) {
@@ -309,7 +314,8 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
     publish()
     await deliver()
     if (delivered === 0) throw new AIError('模型没有返回可以显示的内容，请重试或更换模型', 'empty')
-    set(convId, visionNote ? { ...IDLE, visionNote } : IDLE)
+    const toolNote = usedTools.length ? `${character.name} 刚才使用了：${usedTools.join('、')}` : undefined
+    set(convId, visionNote || toolNote ? { ...IDLE, visionNote, toolNote } : IDLE)
     // 用户开启并同意了自动提取时：在后台整理一次记忆候选（只进入「待确认」，不影响这次回复）
     if (!regenerateFamily) void maybeAutoExtract(character.id, convId).catch(() => {})
   } catch (e) {

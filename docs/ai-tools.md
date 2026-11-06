@@ -94,3 +94,34 @@
 - [ ] AT2 聊天中卡片出现在输入框上方，按钮可点，键盘弹出时不遮挡
 - [ ] AT3 确认写入后，日历 / 便签应用中立即可见
 - [ ] AT4 停止生成时卡片消失
+
+## 记忆工具与聊天体验（PR D）
+
+| 工具 | 权限 | 说明 |
+| --- | --- | --- |
+| memory.search / memory.list | 记忆（查看与提议） | 只看当前角色自己的、已确认的、属于当前世界线的记忆，不跨角色 |
+| memory.propose | 记忆（查看与提议） | **只进入「待确认」**；必须附上用户在本次对话中的原话（角色自己的话、其他会话的话都不算），否则拒绝 → 不能编造共同经历；密码等内容拒绝；重复的只合并依据，并如实说明 |
+
+- 回复后提示「某某 刚才使用了：……」，「始终允许」的读取也看得见
+- 修复：「帮我记个便签 / 记到日历里」不再被第二阶段的「请记住」规则误存为长期记忆
+- 端到端浏览器测试 `scripts/e2e/tools-e2e.cjs`（【模拟模型】）：停止生成时卡片消失、不执行、不再请求；日记只读且只限允许 AI 读取的、未允许的正文不会发给模型；记忆提议只进入待确认；其他角色没有工具；撤销后立即不再提供；刷新后都在；执行记录不含正文和密钥
+
+## 指令要求的 13 项测试对照
+
+| 要求 | 测试 |
+| --- | --- |
+| 未授权不能访问日记 | test-life-tools「未授权时不能访问日记」、test-tools-permissions「默认全部关闭」 |
+| 不同角色权限独立 | test-tools-permissions「每个角色的权限互相独立」、tools-permissions.cjs、tools-e2e.cjs |
+| 撤销立即生效 | test-tools-permissions「撤销立即生效」、tools-e2e.cjs |
+| 日历查询返回真实结果 | test-life-tools「日历查询返回真实结果」、life-tools.cjs |
+| 创建日程需要确认 | test-life-tools「创建日程必须确认」、life-tools.cjs |
+| 修改删除需要确认 | test-life-tools「修改与删除日程必须确认」、便签同理 |
+| 不假装识图 | test-life-tools「没有识图模型时不会假装看到照片」 |
+| 工具调用出错处理 | test-tools-core「执行器……执行出错与超时如实返回」、test-life-tools「数据库写入失败时不报告成功」 |
+| 未知工具被拒绝 | test-tools-core「执行器」「模型调用不存在的工具」 |
+| 不会无限循环 | test-tools-core「不会无限循环」「调用次数上限」 |
+| 停止生成停止工具 | test-tools-core「停止生成」、test-tools-permissions、tools-e2e.cjs |
+| 刷新后权限与数据仍在 | test-tools-permissions「刷新后仍在」、life-tools.cjs、tools-e2e.cjs |
+| 已有数据不受影响 | tools-core.cjs（v8 → v9 升级）、test-life-tools「只读工具不改变任何已有数据」 |
+
+所有测试的「模型」都是模拟的；**真实 DeepSeek 的 Tool Calling 兼容性需要另行验收（T1–T4）**。
