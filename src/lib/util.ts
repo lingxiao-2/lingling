@@ -99,3 +99,45 @@ export function imageToCover(file: File, width = 960, height = 540): Promise<str
     img.src = url
   })
 }
+
+/**
+ * 动态配图：缩小到最长边 maxSide 以内，转成 JPEG dataURL；体积超过 maxBytes 时逐步降低质量。
+ * 透明背景填成白色。只在本机处理，不上传。
+ */
+export function imageToMomentPhoto(file: Blob, maxSide = 1280, maxBytes = 900_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!/^image\/(jpeg|png|webp|gif|heic|heif)$/i.test(file.type) && file.type !== '') {
+      reject(new Error('只支持 JPG、PNG、WebP、GIF 图片'))
+      return
+    }
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const k = Math.min(1, maxSide / Math.max(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(img.width * k))
+      canvas.height = Math.max(1, Math.round(img.height * k))
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('无法处理图片'))
+        return
+      }
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      let q = 0.85
+      let out = canvas.toDataURL('image/jpeg', q)
+      while (out.length * 0.75 > maxBytes && q > 0.45) {
+        q -= 0.1
+        out = canvas.toDataURL('image/jpeg', q)
+      }
+      resolve(out)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('图片读取失败，换一张试试'))
+    }
+    img.src = url
+  })
+}

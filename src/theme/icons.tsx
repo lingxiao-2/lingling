@@ -41,6 +41,9 @@ import {
   Users,
   ExternalLink,
   ClipboardPaste,
+  Heart,
+  MessageSquare,
+  Lock,
 } from 'lucide-react'
 import { ICON, type IconSize, type IconStroke } from './tokens'
 
@@ -82,6 +85,9 @@ const REGISTRY = {
   voice: Mic,
   external: ExternalLink,
   paste: ClipboardPaste,
+  like: Heart,
+  comment: MessageSquare,
+  lock: Lock,
   // 实体
   character: UserRound,
   people: Users,

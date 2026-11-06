@@ -236,13 +236,50 @@ export interface MemoryPrefs {
 }
 
 /* ---------- 朋友圈 / 表情（只建结构，V0.2 完善） ---------- */
+/** 动态的互动者：用户自己，或某个角色 */
+export interface MomentActor {
+  type: 'user' | 'character'
+  /** 用户为 'user'，角色为角色 ID */
+  id: string
+}
+
+export interface MomentLike extends MomentActor {
+  at: number
+}
+
+export interface MomentComment {
+  id: string
+  author: MomentActor
+  content: string
+  /** 回复某人（对方的显示名由界面根据 actor 计算） */
+  replyTo?: MomentActor
+  createdAt: number
+  /** 软删除：不显示、不发送给模型，可以撤销 */
+  deleted?: boolean
+}
+
+/**
+ * 动态（朋友圈）。v1 起就有这张表；V1 第三阶段新增的字段均为可选，不需要数据库迁移。
+ */
 export interface Moment {
   id: string
   authorType: 'user' | 'character'
   authorId: string
   content: string
+  /** 配图：本机压缩后的图片 dataURL（最多 9 张），不上传到任何服务器 */
   imageRefs: string[]
-  visibility: 'all' | 'private'
+  /**
+   * 可见范围：all 所有角色可见 · private 仅自己可见 · some 只有 visibleTo 中的角色可见。
+   * 只影响角色能否看到和互动；动态始终只保存在本机。
+   */
+  visibility: 'all' | 'private' | 'some'
+  /** visibility = some 时可见的角色 ID */
+  visibleTo?: string[]
+  likes?: MomentLike[]
+  comments?: MomentComment[]
+  /** 软删除：从动态列表中隐藏，可以撤销；不会真正删除数据 */
+  deleted?: boolean
+  updatedAt?: number
   createdAt: number
 }
 
