@@ -25,6 +25,9 @@ import MusicPage from './pages/music/MusicPage'
 import TimerWatcher from './components/TimerWatcher'
 import ClockPage from './pages/ClockPage'
 import WeatherPage from './pages/WeatherPage'
+import MailPage from './pages/mail/MailPage'
+import ComposePage from './pages/mail/ComposePage'
+import LetterPage from './pages/mail/LetterPage'
 import PlaylistPage from './pages/music/PlaylistPage'
 import NowPlayingPage from './pages/music/NowPlayingPage'
 import ContactsPage from './pages/ContactsPage'
@@ -109,6 +112,9 @@ export default function App() {
       <Route path="music" element={<MusicPage />} />
       <Route path="clock" element={<ClockPage />} />
       <Route path="weather" element={<WeatherPage />} />
+      <Route path="mail" element={<MailPage />} />
+      <Route path="mail/new" element={<ComposePage />} />
+      <Route path="mail/:id" element={<LetterPage />} />
       <Route path="music/playlist/:id" element={<PlaylistPage />} />
       <Route path="music/now" element={<NowPlayingPage />} />
       <Route path="me/iphone/run/:id" element={<RunPage />} />

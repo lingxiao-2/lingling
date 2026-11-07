@@ -77,6 +77,11 @@ export interface ContextInput {
   /** 这个角色的长期记忆（只会用到已确认的） */
   memories?: Memory[]
   budget?: Partial<ContextBudget>
+  /**
+   * 写作模式（信件、礼物回应、塔罗解读等）：人设、关系、世界、世界书、长期记忆照常使用；
+   * 不使用聊天的消息格式与分寸提示，开头和结尾换成任务自己的要求；最近的聊天只作为参考文本附在设定里。
+   */
+  compose?: { intro: string; outro: string; /** 用于挑选相关记忆与世界书的额外文字（例如信的主题、你写的信） */ recallText?: string }
 }
 
 export interface BuiltContext {
@@ -213,7 +218,7 @@ export function buildContext(input: ContextInput): BuiltContext {
   const m = (t: string | undefined) => macros((t ?? '').trim(), name, user)
 
   const active = activeMessages(input.history)
-  const recent = active.slice(-budget.scanDepth).map((x) => x.content).join('\n')
+  const recent = active.slice(-budget.scanDepth).map((x) => x.content).join('\n') + (input.compose?.recallText ? `\n${input.compose.recallText}` : '')
   const entries = triggeredEntries(input.lorebooks, recent, budget.loreChars)
 
   const report: ContextReport = { sections: [], omitted: [], history: { sent: 0, total: 0 } }
@@ -224,7 +229,7 @@ export function buildContext(input: ContextInput): BuiltContext {
     report.sections.push({ label, chars: text.length })
   }
   const skip = (label: string, chars: number, reason: string) => chars > 0 && report.omitted.push({ label, chars, reason })
-  add('基本要求', 
+  add('基本要求', input.compose ? m(input.compose.intro) :
     `你是「${name}」，正在一款聊天软件里和「${user}」聊天。请以${name}的身份、用第一人称自然地回复，不要替${user}说话或描写${user}的行为。` +
       `平时不必主动谈论技术细节；但如果${user}认真地问你是不是真人，要诚实说明你是 AI 扮演的角色。不要刻意让${user}依赖你，也不要劝${user}疏远现实中的人。`,
   )
@@ -281,7 +286,20 @@ export function buildContext(input: ContextInput): BuiltContext {
     if (rest > 0) skip(`资料要点 ${rest} 条`, rest * 30, '资料要点每次最多约 1500 字，排在后面的没有发送')
   }
   // 长期记忆：固定 / 重要的常驻，其余按话题挑选
-  const usedMemories = pickMemories((input.memories ?? []).filter((x) => x.characterId === c.id), recent, undefined, { worldId: c.worldId, relation: rel.status })
+  const mine = (input.memories ?? []).filter((x) => x.characterId === c.id)
+  const usedMemories = pickMemories(mine, input.compose?.recallText ? `${recent}\n${input.compose.recallText}` : recent, undefined, { worldId: c.worldId, relation: rel.status })
+  if (input.compose) {
+    // 写作模式：在相关记忆之外，按最近更新补充已确认的记忆（同样受字数上限约束）
+    let chars = usedMemories.reduce((n, x) => n + x.content.length, 0)
+    const extra = mine
+      .filter((x) => x.status === 'active' && !usedMemories.includes(x) && (!x.worldId || !c.worldId || x.worldId === c.worldId) && !x.sensitive)
+      .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
+    for (const x of extra) {
+      if (chars + x.content.length > MEMORY_BUDGET.chars) break
+      usedMemories.push(x)
+      chars += x.content.length
+    }
+  }
   const memText = memorySection(usedMemories, user)
   if (memText) add(`长期记忆 ${usedMemories.length} 条`, memText)
   const restMem = (input.memories ?? []).filter((x) => x.characterId === c.id && x.status === 'active' && !usedMemories.includes(x))
@@ -292,13 +310,20 @@ export function buildContext(input: ContextInput): BuiltContext {
   }
   if (c.sourceDoc?.text) skip('导入原文全文', c.sourceDoc.chars, '全文只保存在本机供核对和重新整理；聊天时发送的是上面的字段和要点')
   const exchanges = active.filter((x) => x.senderType === 'user').length
-  add('表达偏好', styleSection(c, exchanges, user, rel.status))
   const guidance = turnGuidance({ active, charName: name, userName: user, nicknames: rel.nicknames.forUser, exchanges })
   const freq = stickerFrequency(c)
   const analyses = input.analyses ?? new Map<string, StickerAnalysis>()
-  const offered = freq === 'never' ? { options: [], map: new Map<string, string>() } : offeredStickers(input.stickers ?? [], analyses, recent)
-  add(offered.options.length ? `消息格式（含 ${offered.options.length} 个可用表情包）` : '消息格式', formatSection(freq, offered.options))
-  add('这一轮的分寸', m(turnGuidanceSection(guidance)))
+  const offered = freq === 'never' || input.compose ? { options: [], map: new Map<string, string>() } : offeredStickers(input.stickers ?? [], analyses, recent)
+  if (!input.compose) {
+    add('表达偏好', styleSection(c, exchanges, user, rel.status))
+    add(offered.options.length ? `消息格式（含 ${offered.options.length} 个可用表情包）` : '消息格式', formatSection(freq, offered.options))
+    add('这一轮的分寸', m(turnGuidanceSection(guidance)))
+  } else {
+    // 写作模式：最近的聊天只作为参考（不是要回复的对象）
+    const lines = active.filter((x) => x.kind === 'text' && x.content.trim()).slice(-16).map((x) => `${x.senderType === 'user' ? user : name}：${x.content.trim().slice(0, 160)}`)
+    if (lines.length) add('最近的聊天（参考）', `【最近的聊天】（节选，只供了解近况；${name}说过、但设定和记忆里没有的内容不算事实）\n${clip(lines.join('\n'), 1600)}`)
+    add('任务要求', m(input.compose.outro))
+  }
   add(
     '结尾提醒',
     `只依据以上设定和下面真实发生过的聊天内容回应，不要编造你们没有共同经历过的事情；不确定时可以自然地询问。` +
@@ -379,7 +404,7 @@ export function buildContext(input: ContextInput): BuiltContext {
     }, [])
 
   return {
-    messages: [{ role: 'system', content: parts.join('\n\n') }, ...chat],
+    messages: [{ role: 'system', content: parts.join('\n\n') }, ...(input.compose ? [] : chat)],
     usedEntries: entries.map((e) => e.name),
     relatedProfileChunks: related.length,
     usedMemoryIds: usedMemories.map((x) => x.id),

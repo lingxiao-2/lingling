@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 12
+export const DB_SCHEMA_VERSION = 13
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -660,6 +660,32 @@ export interface ClockTimer {
   finishedAt?: number
 }
 
+/* ---------- 信箱（第八阶段，v13） ---------- */
+export type PaperId = 'snow' | 'starlight' | 'parchment' | 'night' | 'blossom'
+export interface Letter {
+  id: string
+  /** 这封信属于哪个角色（你写给 TA，或 TA 写给你）；不同角色的信互相隔离 */
+  characterId: string
+  direction: 'from_user' | 'from_character'
+  status: 'draft' | 'sent' | 'received'
+  subject: string
+  body: string
+  paper: PaperId
+  /** 角色来信是否已读 */
+  read: boolean
+  starred: boolean
+  /** 回复的是哪一封 */
+  replyToId?: string
+  /** 角色来信：生成它的模型 */
+  model?: string
+  /** 角色来信：你邀请时写的主题 */
+  prompt?: string
+  createdAt: number
+  updatedAt: number
+  sentAt?: number
+  deletedAt?: number
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -687,6 +713,7 @@ export class LinglingDB extends Dexie {
   trackBlobs!: Table<TrackBlob, string>
   playlists!: Table<Playlist, string>
   timers!: Table<ClockTimer, string>
+  letters!: Table<Letter, string>
 
   constructor() {
     super('lingling-ai')
@@ -768,6 +795,10 @@ export class LinglingDB extends Dexie {
     // v12：只新增倒计时表
     this.version(12).stores({
       timers: 'id, createdAt, status',
+    })
+    // v13：只新增信件表
+    this.version(13).stores({
+      letters: 'id, characterId, status, createdAt, deletedAt',
     })
   }
 }

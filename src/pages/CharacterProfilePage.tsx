@@ -108,6 +108,10 @@ export default function CharacterProfilePage() {
           </button>
         </Section>
 
+        <Section title="信件">
+          <LetterEntry characterId={id} />
+        </Section>
+
         <Section title="朋友圈">
           <label className="w-full flex items-center justify-between gap-3 px-4 py-3 text-[14px]">
             <span>
@@ -241,5 +245,23 @@ export default function CharacterProfilePage() {
         />
       )}
     </div>
+  )
+}
+
+/** 和这个角色之间的信件（只统计这个角色的） */
+function LetterEntry({ characterId }: { characterId: string }) {
+  const nav = useNavigate()
+  const n = useLiveQuery(async () => {
+    const list = (await db.letters.where('characterId').equals(characterId).toArray()).filter((l) => !l.deletedAt && l.status !== 'draft')
+    return { total: list.length, unread: list.filter((l) => l.direction === 'from_character' && !l.read).length }
+  }, [characterId])
+  return (
+    <button onClick={() => nav(`/mail?character=${characterId}`)} className="press w-full flex items-center justify-between px-4 py-3 text-left">
+      <span className="text-[14px]">
+        往来信件 {n?.total ?? 0} 封
+        {!!n?.unread && <span className="ml-2 text-[12px] text-[var(--c-accent-strong)]">{n.unread} 封未读</span>}
+      </span>
+      <span className="text-[12px] text-[var(--c-text-3)]">打开信箱</span>
+    </button>
   )
 }
