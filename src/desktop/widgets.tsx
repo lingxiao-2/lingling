@@ -14,6 +14,9 @@ import type { DesktopItem } from './layout'
 import { useDesktopNote } from './layoutStore'
 import { colorOf, previewLines } from '../life/notes'
 import { usePlayer } from '../music/player'
+import { useWeather } from '../weather/useWeather'
+import { describeCode } from '../weather/openMeteo'
+import { wxIcon } from '../weather/wxIcon'
 
 type Widget = Extract<DesktopItem, { kind: 'widget' }>
 
@@ -189,7 +192,36 @@ function CharacterWidget({ characterId }: { characterId?: string }) {
   )
 }
 
+/** 天气：所选城市的温度与天气（与天气 App 同步；没有同意联网或没有城市时说明怎么设置；不显示虚构的天气） */
+function WeatherWidget() {
+  const w = useWeather()
+  const d = w?.data
+  const label = !w ? '天气' : !w.consent || !w.city ? '天气（未设置）' : d ? `天气：${w.city.name} ${Math.round(d.current.temp)}°` : `天气：${w.city.name}`
+  return (
+    <Shell label={label} className="desk-glass flex flex-col justify-between px-3 py-2.5">
+      <span className="flex items-center justify-between">
+        <span className="desk-serif italic text-[12px] text-[#6f88a8]">Weather</span>
+        {d && <span className="text-[#5d7392]"><Icon name={wxIcon(d.current.code, d.current.isDay)} size="sm" stroke="thin" /></span>}
+      </span>
+      {w && w.consent && w.city ? (
+        d ? (
+          <span>
+            <span className="block desk-serif text-[30px] leading-none tabular-nums text-[#3f5674]">{Math.round(d.current.temp)}°</span>
+            <span className="mt-1 block truncate text-[11.5px] text-[#4a5f7b]">{w.city.name} · {describeCode(d.current.code, d.current.isDay).text}</span>
+            <span className="block text-[9.5px] text-[#93a5bc]">{w.error ? `更新失败 · ${new Date(d.fetchedAt).getHours()}:${String(new Date(d.fetchedAt).getMinutes()).padStart(2, '0')} 的数据` : 'Open-Meteo'}</span>
+          </span>
+        ) : (
+          <span className="text-[11px] leading-snug text-[#6d819c]">{w.city.name}<br />{w.loading ? '正在获取…' : w.error ? '暂时获取不到天气' : '点按查看'}</span>
+        )
+      ) : (
+        <span className="text-[11px] leading-snug text-[#6d819c]">点按设置城市</span>
+      )}
+    </Shell>
+  )
+}
+
 export function WidgetView({ item }: { item: Widget }) {
+  if (item.widget === 'weather') return <WeatherWidget />
   if (item.widget === 'clock') return <ClockWidget />
   if (item.widget === 'music') return <MusicWidget />
   if (item.widget === 'note') return <NoteWidget noteId={item.noteId} />

@@ -1,5 +1,5 @@
 /** 尚未开发的桌面应用：如实说明计划内容，不伪造任何数据或可用的按钮 */
-import { useParams } from 'react-router-dom'
+import { Navigate, useParams } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import { Icon } from '../theme/icons'
 import { APPS, isAppId } from '../desktop/apps'
@@ -7,6 +7,8 @@ import { APPS, isAppId } from '../desktop/apps'
 export default function ComingSoonPage() {
   const { id = '' } = useParams()
   const a = isAppId(id) ? APPS[id] : null
+  // 已经开发完成的应用：旧的待开发地址直接进入真实页面
+  if (a?.route) return <Navigate to={a.route} replace />
   return (
     <div className="h-dvh flex flex-col">
       <NavBar title={a?.name ?? '应用'} back="/" />

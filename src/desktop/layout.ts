@@ -9,9 +9,9 @@ import { APP_IDS, isAppId, type AppId } from './apps'
 
 export const GRID = { cols: 4, rows: 6, pages: 3, dock: 4 }
 /** 1：只有应用（第四阶段 PR A/B）· 2：加入默认小组件（PR C） */
-export const LAYOUT_VERSION = 2
+export const LAYOUT_VERSION = 3
 
-export type WidgetKind = 'clock' | 'music' | 'note' | 'character'
+export type WidgetKind = 'clock' | 'music' | 'note' | 'character' | 'weather'
 export type WidgetSize = 'small' | 'medium'
 
 export type DesktopItem =
@@ -36,6 +36,7 @@ export const DEFAULT_WIDGETS: { page: number; item: Extract<DesktopItem, { kind:
   { page: 0, item: { kind: 'widget', id: 'w-note', widget: 'note', size: 'small' } },
   { page: 0, item: { kind: 'widget', id: 'w-character', widget: 'character', size: 'small' } },
   { page: 1, item: { kind: 'widget', id: 'w-music', widget: 'music', size: 'medium' } },
+  { page: 1, item: { kind: 'widget', id: 'w-weather', widget: 'weather', size: 'small' } },
 ]
 
 export function defaultLayout(): DesktopLayout {
@@ -89,7 +90,7 @@ export function normalizeLayout(raw: unknown): DesktopLayout {
       if (x?.kind === 'app' && isAppId(x.app) && !seen.has(x.app)) {
         seen.add(x.app)
         out.push({ kind: 'app', app: x.app })
-      } else if (x?.kind === 'widget' && ['clock', 'music', 'note', 'character'].includes(x.widget) && typeof x.id === 'string' && !seenWidget.has(x.id)) {
+      } else if (x?.kind === 'widget' && ['clock', 'music', 'note', 'character', 'weather'].includes(x.widget) && typeof x.id === 'string' && !seenWidget.has(x.id)) {
         seenWidget.add(x.id)
         out.push({ kind: 'widget', id: x.id, widget: x.widget, size: x.size === 'medium' ? 'medium' : 'small', ...(x.characterId ? { characterId: String(x.characterId) } : {}), ...(x.noteId ? { noteId: String(x.noteId) } : {}) })
       }
@@ -101,6 +102,9 @@ export function normalizeLayout(raw: unknown): DesktopLayout {
   if ((typeof r.version === 'number' ? r.version : 1) < 2) {
     const migrated = migrateToV2({ version: 1, pages, dock, page: 0 }).pages
     pages.splice(0, pages.length, ...migrated)
+  } else if ((r.version as number) < 3) {
+    // v2 → v3：只加入天气小组件（第八阶段新增），用户排好的其他内容不变
+    pages.splice(0, pages.length, ...addWidgets({ version: 2, pages, dock, page: 0 }, ['w-weather']).pages)
   }
   // 新版本增加的应用（或丢失的应用）：补到有空位的页
   for (const id of APP_IDS) {
@@ -118,11 +122,16 @@ export function normalizeLayout(raw: unknown): DesktopLayout {
  * 那一页放不下就放到后面有空位的页，都放不下就不加。用户自己排好的应用顺序和 Dock 不变。
  */
 export function migrateToV2(l: DesktopLayout): DesktopLayout {
+  return { ...addWidgets(l, DEFAULT_WIDGETS.map((w) => w.item.id)), version: 2 }
+}
+
+/** 把指定的默认小组件加到它默认所在页的前面（放不下就放后面有空位的页，都放不下就不加；已有的不重复加） */
+export function addWidgets(l: DesktopLayout, ids: string[]): DesktopLayout {
   const pages = l.pages.map((p) => [...p])
   const has = new Set(pages.flat().flatMap((x) => (x.kind === 'widget' ? [x.id] : [])))
   // 倒序插入，保证同一页内的顺序与默认布局一致
   for (const w of [...DEFAULT_WIDGETS].reverse()) {
-    if (has.has(w.item.id)) continue
+    if (!ids.includes(w.item.id) || has.has(w.item.id)) continue
     for (let i = 0; i < pages.length; i++) {
       const p = (w.page + i) % pages.length
       const trial = [{ ...w.item }, ...pages[p]]
@@ -132,7 +141,7 @@ export function migrateToV2(l: DesktopLayout): DesktopLayout {
       }
     }
   }
-  return { ...l, version: 2, pages }
+  return { ...l, pages }
 }
 
 /** 设置便签小组件显示的便签 */

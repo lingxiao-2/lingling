@@ -756,3 +756,13 @@ input[type="radio"] {
 .clock-big { font-size: 64px; line-height: 1; color: #3f5674; letter-spacing: 0.02em; }
 .clock-sec { font-size: 22px; margin-left: 6px; color: #8496ae; }
 .stopwatch-time { font-size: 58px; line-height: 1; color: #3f5674; }
+
+/* ---------- 天气（第八阶段） ---------- */
+.weather-now {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.78), rgba(220, 232, 247, 0.62));
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 10px 30px rgba(80, 110, 150, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.weather-temp { font-size: 64px; line-height: 1; }
