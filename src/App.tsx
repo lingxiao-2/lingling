@@ -22,6 +22,8 @@ import AiToolsPage, { AiToolsCharacterPage } from './pages/AiToolsPage'
 import IphonePage, { RunPage } from './pages/iphone/IphonePage'
 import SharePage from './pages/SharePage'
 import MusicPage from './pages/music/MusicPage'
+import TimerWatcher from './components/TimerWatcher'
+import ClockPage from './pages/ClockPage'
 import PlaylistPage from './pages/music/PlaylistPage'
 import NowPlayingPage from './pages/music/NowPlayingPage'
 import ContactsPage from './pages/ContactsPage'
@@ -65,6 +67,7 @@ export default function App() {
   return (
     <>
     <Wallpaper />
+    <TimerWatcher />
     <Routes>
       {/* 首页是虚拟手机桌面；原来的四个页面仍然在原地址（消息改为 /messages），底部导航多了「桌面」 */}
       <Route index element={<DesktopPage />} />
@@ -103,6 +106,7 @@ export default function App() {
       <Route path="me/iphone" element={<IphonePage />} />
       <Route path="share" element={<SharePage />} />
       <Route path="music" element={<MusicPage />} />
+      <Route path="clock" element={<ClockPage />} />
       <Route path="music/playlist/:id" element={<PlaylistPage />} />
       <Route path="music/now" element={<NowPlayingPage />} />
       <Route path="me/iphone/run/:id" element={<RunPage />} />

@@ -196,7 +196,7 @@ export default function DesktopPage() {
     }
   }
 
-  /** 小组件点按：时间无动作；音乐进入音乐应用；便签打开编辑；角色进入聊天（未选择时选择角色）。编辑模式下点角色小组件可以更换角色 */
+  /** 小组件点按：时间进入时钟；音乐进入音乐应用；便签打开编辑；角色进入聊天（未选择时选择角色）。编辑模式下点角色小组件可以更换角色 */
   const onClickWidget = (it: WidgetItem) => {
     if (suppressClick.current) {
       suppressClick.current = false
@@ -206,7 +206,8 @@ export default function DesktopPage() {
       if (it.widget === 'character') setPicking(it.id)
       return
     }
-    if (it.widget === 'music') nav(appHref('music'))
+    if (it.widget === 'clock') nav(appHref('clock'))
+    else if (it.widget === 'music') nav(appHref('music'))
     else if (it.widget === 'note') {
       // 打开指定的那张便签；没有指定或已删除时，到便签应用里写一张或选一张
       if (!it.noteId) return nav(`/notes/new?widget=${it.id}`)
@@ -249,9 +250,9 @@ export default function DesktopPage() {
         <div
           key={it.id}
           {...handlers(s)}
-          role={it.widget === 'clock' ? undefined : 'button'}
+          role="button"
           onClick={() => onClickWidget(it)}
-          className={`desk-wslot ${it.size === 'medium' ? 'col-span-4' : 'col-span-2'} row-span-2 ${it.widget === 'clock' ? '' : 'press'} ${cellClass(s)}`}
+          className={`desk-wslot ${it.size === 'medium' ? 'col-span-4' : 'col-span-2'} row-span-2 press ${cellClass(s)}`}
         >
           <WidgetView item={it} />
         </div>
