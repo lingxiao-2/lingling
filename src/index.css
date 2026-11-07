@@ -778,3 +778,9 @@ input[type="radio"] {
 .paper-blossom { background: linear-gradient(180deg, #fff8fa, #f6e9f0); color: #5a4150; }
 .paper-chip { border: 1px solid rgba(255, 255, 255, 0.9); }
 .paper-strip.paper-night { background: #2f4160; }
+
+/* ---------- 礼物（第八阶段） ---------- */
+.gift-tile { border-radius: 14px; background: linear-gradient(145deg, rgba(255,255,255,0.92), rgba(214,226,242,0.7)); border: 1px solid rgba(255,255,255,0.95); box-shadow: 0 4px 12px rgba(80,110,150,0.12); }
+.gift-card { background: rgba(255,255,255,0.45); border: 1px solid rgba(255,255,255,0.7); }
+.gift-card-on { background: rgba(255,255,255,0.9); box-shadow: 0 0 0 2px var(--c-accent), 0 6px 16px rgba(80,110,150,0.15); }
+.gift-hero { background: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.95), rgba(225,235,248,0.7)); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 10px 30px rgba(80,110,150,0.12); }

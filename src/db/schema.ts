@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 13
+export const DB_SCHEMA_VERSION = 14
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -686,6 +686,27 @@ export interface Letter {
   deletedAt?: number
 }
 
+/* ---------- 礼物（第八阶段，v14） ---------- */
+export interface GiftRecord {
+  id: string
+  /** 和哪个角色之间的礼物；不同角色互相隔离 */
+  characterId: string
+  direction: 'to_character' | 'from_character'
+  giftId: string
+  /** 你的留言（送出时）或 TA 的留言（收到时） */
+  message: string
+  /** 送出后 TA 的回应（真实模型输出） */
+  reply?: string
+  replyStatus?: 'waiting' | 'done' | 'failed'
+  replyError?: string
+  model?: string
+  /** 关联的纪念日（日历中的日程 ID） */
+  eventId?: string
+  starred: boolean
+  createdAt: number
+  deletedAt?: number
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -714,6 +735,7 @@ export class LinglingDB extends Dexie {
   playlists!: Table<Playlist, string>
   timers!: Table<ClockTimer, string>
   letters!: Table<Letter, string>
+  giftRecords!: Table<GiftRecord, string>
 
   constructor() {
     super('lingling-ai')
@@ -799,6 +821,10 @@ export class LinglingDB extends Dexie {
     // v13：只新增信件表
     this.version(13).stores({
       letters: 'id, characterId, status, createdAt, deletedAt',
+    })
+    // v14：只新增礼物记录表
+    this.version(14).stores({
+      giftRecords: 'id, characterId, direction, createdAt',
     })
   }
 }

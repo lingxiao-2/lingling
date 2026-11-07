@@ -28,6 +28,9 @@ import WeatherPage from './pages/WeatherPage'
 import MailPage from './pages/mail/MailPage'
 import ComposePage from './pages/mail/ComposePage'
 import LetterPage from './pages/mail/LetterPage'
+import GiftsPage from './pages/gifts/GiftsPage'
+import SendGiftPage from './pages/gifts/SendGiftPage'
+import GiftRecordPage from './pages/gifts/GiftRecordPage'
 import PlaylistPage from './pages/music/PlaylistPage'
 import NowPlayingPage from './pages/music/NowPlayingPage'
 import ContactsPage from './pages/ContactsPage'
@@ -115,6 +118,9 @@ export default function App() {
       <Route path="mail" element={<MailPage />} />
       <Route path="mail/new" element={<ComposePage />} />
       <Route path="mail/:id" element={<LetterPage />} />
+      <Route path="gifts" element={<GiftsPage />} />
+      <Route path="gifts/send" element={<SendGiftPage />} />
+      <Route path="gifts/:id" element={<GiftRecordPage />} />
       <Route path="music/playlist/:id" element={<PlaylistPage />} />
       <Route path="music/now" element={<NowPlayingPage />} />
       <Route path="me/iphone/run/:id" element={<RunPage />} />
