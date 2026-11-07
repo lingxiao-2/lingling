@@ -6,12 +6,18 @@
 import { useState } from 'react'
 import { Icon } from '../theme/icons'
 import { resolveConfirmation, type ConfirmRequest } from '../tools/confirm'
+import { launchRun, watchAfterLaunch } from '../ios/runs'
 
 export default function ToolConfirmCard({ req }: { req: ConfirmRequest }) {
   const [busy, setBusy] = useState(false)
   const act = (ok: boolean) => {
     if (busy) return
     setBusy(true)
+    // 真实 iPhone 操作：必须在这次点按中同步打开快捷指令（之后再打开会被 iOS 拦下）
+    if (ok && req.launch) {
+      void launchRun({ id: req.launch.runId, url: req.launch.url, status: 'awaiting_confirmation' })
+      watchAfterLaunch(req.launch.runId)
+    }
     resolveConfirmation(req.id, ok)
   }
   return (
@@ -22,14 +28,14 @@ export default function ToolConfirmCard({ req }: { req: ConfirmRequest }) {
       </div>
       {req.lines.length > 0 && (
         <div className={`mt-2 rounded-[12px] px-3 py-2 text-[12.5px] ${req.kind === 'write' ? 'bg-white/60 border border-[var(--c-line)]' : 'text-[var(--c-text-2)]'}`}>
-          {req.kind === 'write' && <div className="mb-1 text-[11px] tracking-[0.1em] text-[var(--c-text-3)]">{req.danger ? '将要删除' : '草稿预览'}</div>}
+          {req.kind === 'write' && <div className="mb-1 text-[11px] tracking-[0.1em] text-[var(--c-text-3)]">{req.danger ? '将要删除' : req.launch ? '执行计划' : '草稿预览'}</div>}
           {req.lines.map((l, i) => (
             <div key={i} className="whitespace-pre-wrap break-words">{l}</div>
           ))}
         </div>
       )}
       <div className="mt-1.5 text-[11px] text-[var(--c-text-3)]">
-        {req.kind === 'write' ? '确认之前不会保存或修改任何内容。' : '只允许这一次；可以在「我的 → AI 工具权限」中修改。'}
+        {req.launch ? '这是真实 iPhone 上的操作。确认后会打开快捷指令；只有快捷指令回报成功才算完成。' : req.kind === 'write' ? '确认之前不会保存或修改任何内容。' : '只允许这一次；可以在「我的 → AI 工具权限」中修改。'}
       </div>
       <div className="mt-2.5 flex justify-end gap-2">
         <button disabled={busy} onClick={() => act(false)} className="press h-8 px-3.5 rounded-full text-[12.5px] text-[#5a6a86] disabled:opacity-50">

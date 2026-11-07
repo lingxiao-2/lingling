@@ -36,7 +36,7 @@ const modes = (page) => page.locator('[data-permission]').evaluateAll((els) => e
   await page.getByText('沈星回', { exact: true }).click()
   await page.waitForSelector('[data-permission]')
   const m0 = await modes(page)
-  check(m0.length === 8 && m0.every(([, m]) => m === '关闭'), `8 项权限默认全部关闭（${m0.length}）`)
+  check(m0.length === 12 && m0.every(([, m]) => m === '关闭'), `12 项权限（含 4 项 iPhone）默认全部关闭（${m0.length}）`)
   await page.locator('[data-permission=diary_read] [role=radio]', { hasText: '每次询问' }).click()
   await page.locator('[data-permission=calendar_read] [role=radio]', { hasText: '始终允许' }).click()
   check(await seen(page.locator('[data-permission=calendar_write] [role=radio]', { hasText: '允许·逐次确认' })), '写入权限明确写着逐次确认')

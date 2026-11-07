@@ -132,10 +132,10 @@ test('撤销立即生效：已经提供给模型的工具，在执行时重新�
   const p = executeToolCall(call(writeTool.name, { title: 'x' }), env('a'))
   for (let i = 0; i < 100 && !pendingConfirmations().length; i++) await wait(5)
   await revokeAll('a')
-  await answer(true)
+  // 撤销时，等待中的确认卡片立即消失（按拒绝处理），之后也无法再点允许
+  assert.equal(pendingConfirmations().length, 0)
   const r = await p
   assert.equal(r.result.ok, false)
-  assert.match((r.result as { error: string }).error, /撤销/)
   assert.deepEqual(runs, [])
 })
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import ToolConfirmCard from '../components/ToolConfirmCard'
+import ShortcutRunCard from '../components/ShortcutRunCard'
 import { usePendingConfirmation } from '../tools/confirm'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -168,6 +169,11 @@ export default function ChatPage() {
     [messages, reply.status, reply.regenerating],
   )
   const lastGroup = useMemo(() => lastReplyGroup(messages ?? []), [messages])
+  /** 这次聊天中发起的真实 iPhone 操作：按时间插在消息之间，显示真实状态（等待确认的显示在确认卡片里） */
+  const runs = useLiveQuery(async () => (await db.shortcutRuns.where('conversationId').equals(convId).toArray()).filter((r) => r.status !== 'awaiting_confirmation').sort((a, b) => a.createdAt - b.createdAt), [convId])
+  const runsBefore = (t: number, after: number) => (runs ?? []).filter((r) => r.createdAt <= t && r.createdAt > after)
+  const runCards = (list: { id: string }[]) =>
+    list.length ? <div className="mx-6 flex flex-col gap-2">{list.map((r) => <ShortcutRunCard key={r.id} runId={r.id} compact />)}</div> : null
 
   const [text, setText] = useState('')
   const [menuMsg, setMenuMsg] = useState<Message | null>(null)
@@ -458,6 +464,7 @@ export default function ChatPage() {
                 className={`flex flex-col gap-[18px] transition-colors duration-700 ${flash === m.id ? 'bg-white/45 rounded-[14px]' : ''}`}
                 style={showAvatar ? undefined : { marginTop: -10 }}
               >
+                {runCards(runsBefore(m.createdAt, prev?.createdAt ?? -Infinity))}
                 {prev && m.createdAt - prev.createdAt > GAP_MS && (
                   <div className="flex justify-center">
                     <span className="ice date-tag tabular-nums" style={{ fontFamily: 'inherit' }}>{formatChatTime(m.createdAt)}</span>
@@ -530,6 +537,7 @@ export default function ChatPage() {
             )
           })()}
 
+          {runCards(runsBefore(Infinity, visible[visible.length - 1]?.createdAt ?? -Infinity))}
           {pendingTool && <ToolConfirmCard req={pendingTool} />}
 
           {reply.status === 'error' && (
