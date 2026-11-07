@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 9
+export const DB_SCHEMA_VERSION = 10
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -570,6 +570,49 @@ export interface ToolLog {
   durationMs: number
 }
 
+/* ---------- 真实 iPhone：快捷指令执行记录（第七阶段，v10 新增表；不进入备份） ---------- */
+export type ShortcutRunStatus =
+  /** 等待你确认（还没有打开快捷指令） */
+  | 'awaiting_confirmation'
+  /** 已发起：已经请求打开快捷指令，还不知道结果 */
+  | 'launched'
+  /** 已确认完成：快捷指令通过回跳链接报告运行成功 */
+  | 'confirmed'
+  /** 无法验证：没有收到回跳（例如从主屏幕 App 打开时回跳到了 Safari） */
+  | 'unverifiable'
+  /** 执行失败：快捷指令报告出错 */
+  | 'failed'
+  /** 已取消：你在聆聆或快捷指令中取消 */
+  | 'cancelled'
+  /** 你在 iPhone 上确认看到了结果（不是系统回报） */
+  | 'user_reported'
+
+export interface ShortcutRun {
+  id: string
+  /** 回跳校验码：只有带着正确校验码的回跳才会改变状态 */
+  nonce: string
+  kind: 'test' | 'reminder' | 'calendar' | 'open_app' | 'custom'
+  shortcutName?: string
+  /** 给你看的标题与内容（例如提醒事项的标题与时间） */
+  title: string
+  lines: string[]
+  /** 发给快捷指令的文本（只保存在本机） */
+  input?: string
+  url: string
+  status: ShortcutRunStatus
+  source: 'settings' | 'chat'
+  characterId?: string
+  conversationId?: string
+  /** 同样内容的操作在短时间内只执行一次 */
+  dedupeKey: string
+  result?: string
+  error?: string
+  createdAt: number
+  updatedAt: number
+  launchedAt?: number
+  finishedAt?: number
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -592,6 +635,7 @@ export class LinglingDB extends Dexie {
   notes!: Table<Note, string>
   events!: Table<CalEvent, string>
   toolLogs!: Table<ToolLog, string>
+  shortcutRuns!: Table<ShortcutRun, string>
 
   constructor() {
     super('lingling-ai')
@@ -659,6 +703,10 @@ export class LinglingDB extends Dexie {
     // v9：只新增 AI 工具执行记录表，不改动任何已有的表和数据
     this.version(9).stores({
       toolLogs: 'id, at, characterId, tool',
+    })
+    // v10：只新增快捷指令执行记录表，不改动任何已有的表和数据
+    this.version(10).stores({
+      shortcutRuns: 'id, createdAt, status, conversationId, dedupeKey',
     })
   }
 }
