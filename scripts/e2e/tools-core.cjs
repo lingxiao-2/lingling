@@ -40,7 +40,8 @@ const serve = async (dir) => {
     t.objectStore('settings').put({ key: 'ai-config', value: { service: 'custom', mode: 'direct', baseUrl: 'https://api.mock.test/v1', apiKey: 'sk-mock', proxyUrl: '', proxyToken: '', model: 'mock-model', temperature: 0.7, maxTokens: 200 } })
     t.oncomplete = () => res(db.version)
   `)
-  check(before === 80, `旧版本数据库为 v8（${before}）`)
+  const OLD = before
+  check(before >= 80, `旧版本数据库（${before}）`)
   await ctx.close()
   srv.stop(); await new Promise((r) => setTimeout(r, 500))
 
@@ -61,14 +62,14 @@ const serve = async (dir) => {
   const after = await idb(page, `
     const names = [...db.objectStoreNames]
     const t = db.transaction(['notes','events','diaries','characters'], 'readonly')
-    const out = { version: db.version, hasLogs: names.includes('toolLogs') }
+    const out = { version: db.version, hasLogs: names.includes('toolLogs'), hasRuns: names.includes('shortcutRuns') }
     t.objectStore('notes').get('n1').onsuccess = (e) => out.note = e.target.result?.text
     t.objectStore('events').get('e1').onsuccess = (e) => out.event = e.target.result?.title
     t.objectStore('diaries').get('d1').onsuccess = (e) => out.diary = e.target.result?.content
     t.objectStore('characters').get('c1').onsuccess = (e) => out.char = e.target.result?.name
     t.oncomplete = () => res(out)
   `)
-  check(after.version === 90 && after.hasLogs, `升级到 v9 并新增 toolLogs 表（${after.version}）`)
+  check(after.version > OLD && after.hasLogs, `升级后版本 ${after.version}（旧 ${OLD}），含 toolLogs 表`)
   check(after.note === '保留我' && after.event === '旧日程' && after.diary === '私密' && after.char === '沈星回', '旧的便签、日程、日记、角色完整保留')
 
   // 3. 聊天：没有可用工具，请求不带 tools，回复正常显示

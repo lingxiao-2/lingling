@@ -19,6 +19,7 @@ import NotesTrashPage from './pages/notes/NotesTrashPage'
 import CalendarPage from './pages/calendar/CalendarPage'
 import EventEditorPage from './pages/calendar/EventEditorPage'
 import AiToolsPage, { AiToolsCharacterPage } from './pages/AiToolsPage'
+import IphonePage, { RunPage } from './pages/iphone/IphonePage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
 import MomentComposePage from './pages/MomentComposePage'
@@ -95,6 +96,8 @@ export default function App() {
       <Route path="me/stickers" element={<StickerSettingsPage />} />
       <Route path="me/backup" element={<BackupPage />} />
       <Route path="me/ai-tools" element={<AiToolsPage />} />
+      <Route path="me/iphone" element={<IphonePage />} />
+      <Route path="me/iphone/run/:id" element={<RunPage />} />
       <Route path="me/ai-tools/:charId" element={<AiToolsCharacterPage />} />
       {/* 第五阶段的全局开关页已由逐个角色的「AI 工具权限」取代；旧设置原样保留，不再使用 */}
       <Route path="me/life-access" element={<Navigate to="/me/ai-tools" replace />} />

@@ -53,9 +53,9 @@ beforeEach(async () => {
   await db.open()
 })
 
-test('数据库 v9 只新增 toolLogs 表', async () => {
-  assert.equal(DB_SCHEMA_VERSION, 9)
-  assert.equal(db.verno, 9)
+test('数据库 v9 新增 toolLogs 表（之后的版本只会继续新增）', async () => {
+  assert.ok(DB_SCHEMA_VERSION >= 9)
+  assert.equal(db.verno, DB_SCHEMA_VERSION)
   assert.ok(db.tables.some((t) => t.name === 'toolLogs'))
 })
 
