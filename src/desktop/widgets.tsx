@@ -66,7 +66,10 @@ function Ribbon({ className = '' }: { className?: string }) {
 
 /** 时间日期：不做玻璃卡片，衬线数字直接落在雪景上（主视觉），日期用细丝带分隔 */
 function ClockWidget() {
-  const t = clockText(useMinute())
+  const now = useMinute()
+  const t = clockText(now)
+  // 正在进行的倒计时（与时钟 App 同步；按分钟显示，精确时间在时钟 App 中）
+  const timer = useLiveQuery(async () => (await db.timers.where('status').equals('running').sortBy('endAt'))[0] ?? null, [])
   return (
     <Shell label="时间日期" className="desk-clock flex flex-col justify-center px-1">
       <div className="flex items-end justify-between gap-3">
@@ -80,7 +83,7 @@ function ClockWidget() {
       </div>
       <div className="mt-2 flex items-center gap-2.5">
         <Ribbon />
-        <span className="desk-serif italic text-[13px] tracking-[0.04em] text-[#5d7392] whitespace-nowrap">{t.en}</span>
+        <span className="desk-serif italic text-[13px] tracking-[0.04em] text-[#5d7392] whitespace-nowrap">{timer?.endAt ? `${timer.name} · ${new Date(timer.endAt).getHours()}:${String(new Date(timer.endAt).getMinutes()).padStart(2, '0')} 结束` : t.en}</span>
         <Ribbon />
       </div>
     </Shell>

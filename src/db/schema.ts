@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 11
+export const DB_SCHEMA_VERSION = 12
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -642,6 +642,24 @@ export interface Playlist {
   updatedAt: number
 }
 
+/* ---------- 时钟：倒计时（第八阶段，v12） ---------- */
+export interface ClockTimer {
+  id: string
+  name: string
+  durationMs: number
+  status: 'running' | 'paused' | 'done' | 'cancelled'
+  /** 运行中：结束的时间点 */
+  endAt?: number
+  /** 暂停时剩余的毫秒 */
+  remainingMs: number
+  /** 结束时页面是否在前台（false：在你离开期间结束，没有响铃） */
+  alerted?: boolean
+  /** 同时创建的 iPhone 提醒事项（快捷指令运行 ID） */
+  shortcutRunId?: string
+  createdAt: number
+  finishedAt?: number
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -668,6 +686,7 @@ export class LinglingDB extends Dexie {
   tracks!: Table<Track, string>
   trackBlobs!: Table<TrackBlob, string>
   playlists!: Table<Playlist, string>
+  timers!: Table<ClockTimer, string>
 
   constructor() {
     super('lingling-ai')
@@ -745,6 +764,10 @@ export class LinglingDB extends Dexie {
       tracks: 'id, createdAt, title, artist, favorite',
       trackBlobs: 'id',
       playlists: 'id, createdAt',
+    })
+    // v12：只新增倒计时表
+    this.version(12).stores({
+      timers: 'id, createdAt, status',
     })
   }
 }

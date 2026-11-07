@@ -751,3 +751,8 @@ input[type="radio"] {
 .np-range { -webkit-appearance: none; appearance: none; height: 22px; background: transparent; }
 .np-range::-webkit-slider-runnable-track { height: 3px; border-radius: 3px; background: rgba(120, 145, 180, 0.35); }
 .np-range::-webkit-slider-thumb { -webkit-appearance: none; margin-top: -6px; height: 15px; width: 15px; border-radius: 9999px; background: #fff; border: 1px solid rgba(120, 145, 180, 0.5); box-shadow: 0 2px 6px rgba(60, 90, 130, 0.25); }
+
+/* ---------- 时钟（第八阶段） ---------- */
+.clock-big { font-size: 64px; line-height: 1; color: #3f5674; letter-spacing: 0.02em; }
+.clock-sec { font-size: 22px; margin-left: 6px; color: #8496ae; }
+.stopwatch-time { font-size: 58px; line-height: 1; color: #3f5674; }
