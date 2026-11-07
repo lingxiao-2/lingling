@@ -784,3 +784,32 @@ input[type="radio"] {
 .gift-card { background: rgba(255,255,255,0.45); border: 1px solid rgba(255,255,255,0.7); }
 .gift-card-on { background: rgba(255,255,255,0.9); box-shadow: 0 0 0 2px var(--c-accent), 0 6px 16px rgba(80,110,150,0.15); }
 .gift-hero { background: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.95), rgba(225,235,248,0.7)); border: 1px solid rgba(255,255,255,0.9); box-shadow: 0 10px 30px rgba(80,110,150,0.12); }
+
+/* ---------- 塔罗（第八阶段）：冰蓝 / 银白星光 / 夜空 ---------- */
+.tarot-card { perspective: 900px; border: 0; padding: 0; background: none; flex-shrink: 0; }
+.tarot-card:not(:disabled) { cursor: pointer; }
+.tarot-inner { position: relative; display: block; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.tarot-card.is-revealed .tarot-inner { transform: rotateY(180deg); }
+.tarot-back, .tarot-face { position: absolute; inset: 0; border-radius: 12px; backface-visibility: hidden; -webkit-backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
+.tarot-back { border: 1px solid rgba(255,255,255,0.85); box-shadow: 0 8px 22px rgba(60,90,130,0.22); }
+.tarot-back::before { content: ''; position: absolute; inset: 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.55); }
+.tarot-back-star { position: relative; display: flex; height: 44px; width: 44px; align-items: center; justify-content: center; border-radius: 9999px; border: 1px solid rgba(255,255,255,0.7); color: rgba(255,255,255,0.95); }
+.tarot-face { transform: rotateY(180deg); border: 1px solid rgba(255,255,255,0.95); box-shadow: 0 8px 22px rgba(60,90,130,0.2); gap: 4px; padding: 10px 6px; }
+.tarot-face::before { content: ''; position: absolute; inset: 5px; border-radius: 8px; border: 1px solid rgba(150,175,205,0.45); pointer-events: none; }
+.tarot-face.is-reversed > * { transform: rotate(180deg); }
+.tarot-num { font-family: 'Cormorant Garamond', serif; font-size: 13px; letter-spacing: 0.1em; opacity: 0.75; }
+.tarot-motif { display: flex; height: 46px; width: 46px; align-items: center; justify-content: center; border-radius: 9999px; border: 1px solid rgba(150,175,205,0.5); }
+.tarot-name { font-size: 13px; letter-spacing: 0.08em; text-align: center; line-height: 1.2; }
+.tarot-en { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 10.5px; opacity: 0.7; text-align: center; }
+.tarot-ice .tarot-back { background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.8) 0 1px, transparent 2px) 0 0/16px 16px, linear-gradient(160deg, #a9c3e6, #6f92c4); }
+.tarot-ice .tarot-face { background: linear-gradient(180deg, #fbfdff, #e6eef9); color: #3f5674; }
+.tarot-silver .tarot-back { background: radial-gradient(circle at 70% 30%, rgba(255,255,255,0.95) 0 1px, transparent 2px) 0 0/14px 14px, linear-gradient(160deg, #e9edf3, #b7c1cf); }
+.tarot-silver .tarot-back-star { color: #6f7f96; border-color: rgba(110,125,150,0.5); }
+.tarot-silver .tarot-face { background: linear-gradient(180deg, #ffffff, #eef1f5); color: #4b5668; }
+.tarot-night .tarot-back { background: radial-gradient(circle at 40% 30%, rgba(255,255,255,0.9) 0 1px, transparent 2px) 0 0/18px 18px, linear-gradient(160deg, #34486b, #1d2a44); }
+.tarot-night .tarot-face { background: linear-gradient(180deg, #2c3d5e, #1e2b45); color: #e7eef9; }
+.tarot-night .tarot-face::before, .tarot-night .tarot-motif { border-color: rgba(200,215,240,0.35); }
+.tarot-stage { background: radial-gradient(120% 80% at 50% 0%, rgba(255,255,255,0.75), rgba(214,227,243,0.4)); border: 1px solid rgba(255,255,255,0.8); }
+.tarot-shuffle { animation: tarot-shuffle 0.9s ease-in-out; }
+@keyframes tarot-shuffle { 0%, 100% { transform: translateX(0) rotate(0); } 25% { transform: translateX(-10px) rotate(-4deg); } 75% { transform: translateX(10px) rotate(4deg); } }
+@media (prefers-reduced-motion: reduce) { .tarot-inner { transition: none; } .tarot-shuffle { animation: none; } }

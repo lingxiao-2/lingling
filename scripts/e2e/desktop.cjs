@@ -95,8 +95,8 @@ const current = (page) => page.evaluate(() => [...document.querySelectorAll('[ro
     const left = !page.url().endsWith('#/')
     check(left, `打开「${name}」→ ${page.url().split('#')[1]}`)
   }
-  await page.goto(BASE + '#/app/tarot')
-  check((await page.getByText('还在开发中').count()) === 1, '待开发应用如实说明，没有假按钮')
+  await page.goto(BASE + '#/app/nothing')
+  check((await page.getByText('没有这个应用').count()) === 1, '不存在的应用如实说明')
   await page.goto(BASE + '#/app/music')
   await page.waitForTimeout(300)
   check(/#\/music$/.test(page.url()), '已完成应用的旧待开发地址进入真实页面')
