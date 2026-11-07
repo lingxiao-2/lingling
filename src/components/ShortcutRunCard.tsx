@@ -63,7 +63,7 @@ export default function ShortcutRunCard({ runId, compact, onDone }: { runId: str
       {run.status === 'awaiting_confirmation' && (
         <div className="mt-2 flex justify-end gap-2">
           <button className="press h-8 px-3.5 rounded-full text-[12.5px] text-[#5a6a86]" onClick={() => void cancelRun(run.id)}>取消</button>
-          <button className="press h-8 px-4 rounded-full bg-[var(--c-accent)] text-white text-[12.5px]" onClick={open}>打开快捷指令</button>
+          <button className="press h-8 px-4 rounded-full bg-[var(--c-accent)] text-white text-[12.5px]" onClick={open}>{run.shortcutName ? '打开快捷指令' : run.url.startsWith('https:') ? '在新页面打开' : '打开'}</button>
         </div>
       )}
       {(run.status === 'unverifiable' || run.status === 'launched') && (

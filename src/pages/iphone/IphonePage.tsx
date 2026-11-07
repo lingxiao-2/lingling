@@ -7,6 +7,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import NavBar from '../../components/NavBar'
 import { ConfirmDialog } from '../../components/Sheet'
 import ShortcutRunCard from '../../components/ShortcutRunCard'
+import IphoneActions from './IphoneActions'
 import { Icon } from '../../theme/icons'
 import { db } from '../../db/db'
 import { detectEnvironment } from '../../ios/env'
@@ -14,7 +15,8 @@ import { RECIPES } from '../../ios/recipes'
 import { clearRuns, createRun, STATUS_LABEL } from '../../ios/runs'
 import { LIMITS, listShortcuts, registerShortcut, removeShortcut, SHORTCUTS_KEY, updateShortcut, type RegisteredShortcut, type ShortcutPurpose } from '../../ios/shortcuts'
 
-const PURPOSE_LABEL: Record<ShortcutPurpose, string> = { test: '测试连接', reminder: '提醒事项', calendar: '系统日历', open_app: '打开应用', custom: '自定义' }
+const PURPOSE_LABEL: Record<ShortcutPurpose, string> = { test: '测试连接', reminder: '提醒事项', calendar: '系统日历', open_app: '打开应用（旧）', custom: '自定义（例如打开某个 App）' }
+const REGISTERABLE: ShortcutPurpose[] = ['test', 'reminder', 'calendar', 'custom']
 
 function useShortcuts() {
   return useLiveQuery(async () => {
@@ -109,7 +111,7 @@ export default function IphonePage() {
           <div className="mt-2 flex flex-col gap-2">
             <input aria-label="快捷指令名称" value={name} maxLength={LIMITS.name} onChange={(e) => setName(e.target.value)} placeholder={RECIPES[0].name} className="h-9 rounded-[10px] bg-white/70 border border-[var(--c-line)] px-3 text-[15px] outline-none" />
             <select aria-label="用途" value={purpose} onChange={(e) => setPurpose(e.target.value as ShortcutPurpose)} className="h-9 rounded-[10px] bg-white/70 border border-[var(--c-line)] px-2 text-[14px]">
-              {(Object.keys(PURPOSE_LABEL) as ShortcutPurpose[]).map((p) => <option key={p} value={p}>{PURPOSE_LABEL[p]}</option>)}
+              {REGISTERABLE.map((p) => <option key={p} value={p}>{PURPOSE_LABEL[p]}</option>)}
             </select>
             {purpose === 'custom' && <input aria-label="用途说明" value={desc} maxLength={LIMITS.description} onChange={(e) => setDesc(e.target.value)} placeholder="它是做什么的（AI 会看到这句说明）" className="h-9 rounded-[10px] bg-white/70 border border-[var(--c-line)] px-3 text-[14px] outline-none" />}
             <button className="press h-9 rounded-full bg-[var(--c-accent)] text-white text-[13.5px] disabled:opacity-50" disabled={!name.trim()} onClick={() => void add()}>登记</button>
@@ -149,7 +151,12 @@ export default function IphonePage() {
           )}
         </Section>
 
-        <Section n={6} title="最近的运行">
+        <Section n={6} title="试一试真实操作">
+          <p className="mb-2 text-[11.5px] text-[var(--c-text-3)]">不经过 AI，直接从这里运行。先生成执行计划，看清日期、时间和标题，再打开快捷指令。</p>
+          <IphoneActions />
+        </Section>
+
+        <Section n={7} title="最近的运行">
           {runs?.length === 0 && <p className="text-[var(--c-text-3)]">还没有。</p>}
           {runs?.map((r) => (
             <button key={r.id} className="run-row press w-full flex justify-between gap-2 py-1.5 text-left hairline-b last:border-b-0" onClick={() => nav(`/me/iphone/run/${r.id}`)}>
@@ -160,7 +167,7 @@ export default function IphonePage() {
           {!!runs?.length && <button className="press mt-2 text-[12px] text-[var(--c-text-3)]" onClick={() => void clearRuns()}>清除已结束的记录</button>}
         </Section>
 
-        <Section n={7} title="角色权限">
+        <Section n={8} title="角色权限">
           哪些角色可以在你确认后使用这些快捷指令，在「AI 工具权限」中逐个角色设置，默认全部关闭。
           <button className="press mt-2 flex items-center gap-1 text-[var(--c-accent-strong)]" onClick={() => nav('/me/ai-tools')}>前往 AI 工具权限 <Icon name="forward" size="xs" /></button>
         </Section>
