@@ -49,11 +49,11 @@ const check = (ok, name) => {
   const font = await page.locator('[aria-label^="现在 "]').evaluate((e) => getComputedStyle(e).fontFamily)
   check(/Cormorant/.test(font), `时间使用英文衬线字体（${font.split(',')[0]}）`)
 
-  // 音乐：明确未连接，没有播放按钮
+  // 音乐：没有歌曲时如实说明，没有虚假的播放按钮（第八阶段起显示音乐 App 的真实状态）
   await page.locator('[role=tab]').nth(1).click()
   await page.waitForTimeout(600)
-  const music = page.locator('[aria-label="音乐（未连接）"]')
-  check((await music.count()) === 1 && (await music.getByText('音乐未连接').count()) === 1, '音乐小组件明确显示「未连接」')
+  const music = page.locator('[role=group][aria-label="音乐"]')
+  check((await music.count()) === 1 && (await music.getByText('还没有音乐').count()) === 1, '音乐小组件：没有歌曲时显示「还没有音乐」')
   check((await page.locator('button[aria-label*="播放"], button:has-text("播放"), [aria-label*="暂停"]').count()) === 0, '没有虚假的播放 / 暂停按钮')
   if (shots) await page.screenshot({ path: `${shots}/widgets-2.png` })
   await page.locator('[role=tab]').nth(0).click()

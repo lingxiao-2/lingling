@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 10
+export const DB_SCHEMA_VERSION = 11
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -613,6 +613,35 @@ export interface ShortcutRun {
   finishedAt?: number
 }
 
+/* ---------- 音乐（第八阶段，v11） ---------- */
+export interface Track {
+  id: string
+  title: string
+  artist: string
+  album: string
+  /** 秒；读不到时为 0 */
+  duration: number
+  mime: string
+  bytes: number
+  fileName: string
+  /** 小封面（data URL，最长边 300px）；没有时为空 */
+  cover?: string
+  favorite: boolean
+  createdAt: number
+}
+/** 音频文件本体（与元数据分开存，列表加载不读大文件） */
+export interface TrackBlob {
+  id: string
+  blob: Blob
+}
+export interface Playlist {
+  id: string
+  name: string
+  trackIds: string[]
+  createdAt: number
+  updatedAt: number
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -636,6 +665,9 @@ export class LinglingDB extends Dexie {
   events!: Table<CalEvent, string>
   toolLogs!: Table<ToolLog, string>
   shortcutRuns!: Table<ShortcutRun, string>
+  tracks!: Table<Track, string>
+  trackBlobs!: Table<TrackBlob, string>
+  playlists!: Table<Playlist, string>
 
   constructor() {
     super('lingling-ai')
@@ -707,6 +739,12 @@ export class LinglingDB extends Dexie {
     // v10：只新增快捷指令执行记录表，不改动任何已有的表和数据
     this.version(10).stores({
       shortcutRuns: 'id, createdAt, status, conversationId, dedupeKey',
+    })
+    // v11：只新增音乐的三张表
+    this.version(11).stores({
+      tracks: 'id, createdAt, title, artist, favorite',
+      trackBlobs: 'id',
+      playlists: 'id, createdAt',
     })
   }
 }
