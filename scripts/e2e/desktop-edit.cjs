@@ -118,7 +118,7 @@ const check = (ok, name) => {
   check(JSON.stringify(snapshot) === JSON.stringify(reloaded), `刷新后布局、Dock、页码不变（第 ${reloaded.page + 1} 页）`)
   // 打开应用再返回也不变
   await page.locator('[aria-label="Dock"] button[aria-label="天气"]').click()
-  await page.waitForURL(/#\/app\/weather$/)
+  await page.waitForURL(/#\/weather$/)
   await page.goBack()
   await page.waitForSelector('[aria-label="Dock"]')
   await page.waitForTimeout(500)
