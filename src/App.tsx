@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import TabBar from './components/TabBar'
 import Wallpaper from './components/Wallpaper'
@@ -6,54 +6,57 @@ import { ensureDefaults } from './db/db'
 import MessagesPage from './pages/MessagesPage'
 import DesktopPage from './pages/DesktopPage'
 import ComingSoonPage from './pages/ComingSoonPage'
-import MemoriesHubPage from './pages/MemoriesHubPage'
-import AlbumHomePage from './pages/album/AlbumHomePage'
-import AlbumGridPage from './pages/album/AlbumGridPage'
-import PhotoViewerPage from './pages/album/PhotoViewerPage'
-import DiaryListPage from './pages/diary/DiaryListPage'
-import DiaryEditorPage from './pages/diary/DiaryEditorPage'
-import DiaryTrashPage from './pages/diary/DiaryTrashPage'
-import NotesListPage from './pages/notes/NotesListPage'
-import NoteEditorPage from './pages/notes/NoteEditorPage'
-import NotesTrashPage from './pages/notes/NotesTrashPage'
-import CalendarPage from './pages/calendar/CalendarPage'
-import EventEditorPage from './pages/calendar/EventEditorPage'
 import AiToolsPage, { AiToolsCharacterPage } from './pages/AiToolsPage'
-import IphonePage, { RunPage } from './pages/iphone/IphonePage'
-import SharePage from './pages/SharePage'
-import MusicPage from './pages/music/MusicPage'
 import TimerWatcher from './components/TimerWatcher'
-import ClockPage from './pages/ClockPage'
-import WeatherPage from './pages/WeatherPage'
-import MailPage from './pages/mail/MailPage'
-import ComposePage from './pages/mail/ComposePage'
-import LetterPage from './pages/mail/LetterPage'
-import GiftsPage from './pages/gifts/GiftsPage'
-import SendGiftPage from './pages/gifts/SendGiftPage'
-import GiftRecordPage from './pages/gifts/GiftRecordPage'
-import TarotPage from './pages/tarot/TarotPage'
-import ReadingPage from './pages/tarot/ReadingPage'
-import PlaylistPage from './pages/music/PlaylistPage'
-import NowPlayingPage from './pages/music/NowPlayingPage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
 import MomentComposePage from './pages/MomentComposePage'
 import MePage from './pages/MePage'
 import ChatPage from './pages/ChatPage'
 import CharacterEditPage from './pages/CharacterEditPage'
-import ContextPreviewPage from './pages/ContextPreviewPage'
 import CharacterProfilePage from './pages/CharacterProfilePage'
-import MemoryPage from './pages/MemoryPage'
-import ApiSettingsPage from './pages/ApiSettingsPage'
 import ProfileEditPage from './pages/ProfileEditPage'
-import ThemeSettingsPage from './pages/ThemeSettingsPage'
-import ImportPage from './pages/ImportPage'
 import LorebookDetailPage from './pages/LorebookDetailPage'
 import LorebookEditPage from './pages/LorebookEditPage'
 import WorldDetailPage from './pages/WorldDetailPage'
 import WorldEditPage from './pages/WorldEditPage'
-import StickerSettingsPage from './pages/StickerSettingsPage'
-import BackupPage from './pages/BackupPage'
+
+// 不常用的页面按需加载（打开时才下载），让桌面与聊天更快打开
+const MemoriesHubPage = lazy(() => import('./pages/MemoriesHubPage'))
+const AlbumHomePage = lazy(() => import('./pages/album/AlbumHomePage'))
+const AlbumGridPage = lazy(() => import('./pages/album/AlbumGridPage'))
+const PhotoViewerPage = lazy(() => import('./pages/album/PhotoViewerPage'))
+const DiaryListPage = lazy(() => import('./pages/diary/DiaryListPage'))
+const DiaryEditorPage = lazy(() => import('./pages/diary/DiaryEditorPage'))
+const DiaryTrashPage = lazy(() => import('./pages/diary/DiaryTrashPage'))
+const NotesListPage = lazy(() => import('./pages/notes/NotesListPage'))
+const NoteEditorPage = lazy(() => import('./pages/notes/NoteEditorPage'))
+const NotesTrashPage = lazy(() => import('./pages/notes/NotesTrashPage'))
+const CalendarPage = lazy(() => import('./pages/calendar/CalendarPage'))
+const EventEditorPage = lazy(() => import('./pages/calendar/EventEditorPage'))
+const IphonePage = lazy(() => import('./pages/iphone/IphonePage'))
+const RunPage = lazy(() => import('./pages/iphone/IphonePage').then((m) => ({ default: m.RunPage })))
+const SharePage = lazy(() => import('./pages/SharePage'))
+const MusicPage = lazy(() => import('./pages/music/MusicPage'))
+const ClockPage = lazy(() => import('./pages/ClockPage'))
+const WeatherPage = lazy(() => import('./pages/WeatherPage'))
+const MailPage = lazy(() => import('./pages/mail/MailPage'))
+const ComposePage = lazy(() => import('./pages/mail/ComposePage'))
+const LetterPage = lazy(() => import('./pages/mail/LetterPage'))
+const GiftsPage = lazy(() => import('./pages/gifts/GiftsPage'))
+const SendGiftPage = lazy(() => import('./pages/gifts/SendGiftPage'))
+const GiftRecordPage = lazy(() => import('./pages/gifts/GiftRecordPage'))
+const TarotPage = lazy(() => import('./pages/tarot/TarotPage'))
+const ReadingPage = lazy(() => import('./pages/tarot/ReadingPage'))
+const PlaylistPage = lazy(() => import('./pages/music/PlaylistPage'))
+const NowPlayingPage = lazy(() => import('./pages/music/NowPlayingPage'))
+const ContextPreviewPage = lazy(() => import('./pages/ContextPreviewPage'))
+const MemoryPage = lazy(() => import('./pages/MemoryPage'))
+const ApiSettingsPage = lazy(() => import('./pages/ApiSettingsPage'))
+const ThemeSettingsPage = lazy(() => import('./pages/ThemeSettingsPage'))
+const ImportPage = lazy(() => import('./pages/ImportPage'))
+const StickerSettingsPage = lazy(() => import('./pages/StickerSettingsPage'))
+const BackupPage = lazy(() => import('./pages/BackupPage'))
 
 function TabLayout() {
   return (
@@ -77,6 +80,7 @@ export default function App() {
     <>
     <Wallpaper />
     <TimerWatcher />
+    <Suspense fallback={<div className="h-dvh" aria-busy="true" />}>
     <Routes>
       {/* 首页是虚拟手机桌面；原来的四个页面仍然在原地址（消息改为 /messages），底部导航多了「桌面」 */}
       <Route index element={<DesktopPage />} />
@@ -144,6 +148,7 @@ export default function App() {
       <Route path="desktop" element={<Navigate to="/" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
     </>
   )
 }

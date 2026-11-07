@@ -1,7 +1,7 @@
 /**
  * 备份与恢复：导出全部数据或单个角色为 .lingling 文件；从文件恢复（预览 → 选择方式 → 确认）。
  */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import NavBar from '../components/NavBar'
@@ -51,10 +51,17 @@ export default function BackupPage() {
     const ps = await db.photos.toArray()
     return { count: ps.length, bytes: ps.reduce((n, p) => n + p.bytes, 0) }
   }, [], { count: 0, bytes: 0 })
+  const musicInfo = useLiveQuery(async () => {
+    const ts = await db.tracks.toArray()
+    return { count: ts.length, bytes: ts.reduce((n, t) => n + t.bytes, 0) }
+  }, [], { count: 0, bytes: 0 })
+  // 音乐文件通常较大：超过 100 MB 时默认不勾选（你可以手动勾选）
+  const [withMusic, setWithMusic] = useState<boolean | null>(null)
+  const musicOn = withMusic ?? musicInfo.bytes <= 100 * 1024 * 1024
   const [busy, setBusy] = useState('')
-  const [ready, setReady] = useState<{ blob: Blob; file: BackupFile; name: string; size: number; zip: boolean; photos: number } | null>(null)
+  const [ready, setReady] = useState<{ blob: Blob; file: BackupFile; name: string; size: number; zip: boolean; photos: number; music: number } | null>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [incoming, setIncoming] = useState<{ file: BackupFile; plan: RestorePlan; local: Awaited<ReturnType<typeof dumpAll>>; photoBlobs: Map<string, Blob> } | null>(null)
+  const [incoming, setIncoming] = useState<{ file: BackupFile; plan: RestorePlan; local: Awaited<ReturnType<typeof dumpAll>>; photoBlobs: Map<string, Blob>; musicBlobs: Map<string, Blob> } | null>(null)
   const [mode, setMode] = useState<RestoreMode>('merge-keep')
   const [confirm, setConfirm] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -66,12 +73,12 @@ export default function BackupPage() {
     setReady(null)
     try {
       const dump = await dumpAll()
-      const file = scope === 'all' ? buildBackup(dump, { schemaVersion: CURRENT_SCHEMA, includeSecrets: secrets, includePhotos: withPhotos }) : pickCharacter(dump, charId, { schemaVersion: CURRENT_SCHEMA })
+      const file = scope === 'all' ? buildBackup(dump, { schemaVersion: CURRENT_SCHEMA, includeSecrets: secrets, includePhotos: withPhotos, includeMusic: musicOn }) : pickCharacter(dump, charId, { schemaVersion: CURRENT_SCHEMA })
       // 生成前先估算大小：太大时提醒，避免 iPhone 内存不足
       const est = await estimateBackup(file, scope === 'all' && withPhotos)
-      setBusy(est.photoCount ? `正在打包 ${est.photoCount} 张照片（约 ${mb(est.jsonBytes + est.photoBytes)}）…` : '正在生成备份…')
+      setBusy(est.photoCount || est.musicCount ? `正在打包${est.photoCount ? ` ${est.photoCount} 张照片` : ''}${est.musicCount ? ` ${est.musicCount} 首音乐` : ''}（约 ${mb(est.jsonBytes + est.photoBytes + est.musicBytes)}）…` : '正在生成备份…')
       const out = await exportBackupBlob(file)
-      setReady({ blob: out.blob, file, name: backupFileName(file), size: out.blob.size, zip: out.zip, photos: est.photoCount })
+      setReady({ blob: out.blob, file, name: backupFileName(file), size: out.blob.size, zip: out.zip, photos: est.photoCount, music: est.musicCount })
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) })
     } finally {
@@ -91,9 +98,9 @@ export default function BackupPage() {
     setBusy('正在读取备份…')
     try {
       if (f.size > LARGE_BACKUP_BYTES) setBusy(`备份较大（${mb(f.size)}），正在读取，iPhone 上可能需要一点时间…`)
-      const { file, photoBlobs } = await readBackupFile(f, CURRENT_SCHEMA)
+      const { file, photoBlobs, musicBlobs } = await readBackupFile(f, CURRENT_SCHEMA)
       const local = await dumpAll()
-      setIncoming({ file, plan: planRestore(file, local), local, photoBlobs })
+      setIncoming({ file, plan: planRestore(file, local), local, photoBlobs, musicBlobs })
       setMode('merge-keep')
     } catch (e) {
       setMsg({ ok: false, text: e instanceof BackupError ? e.message : `读取失败：${e instanceof Error ? e.message : String(e)}` })
@@ -108,10 +115,10 @@ export default function BackupPage() {
     setBusy('正在恢复…')
     try {
       const est = await storageEstimate()
-      const need = new Blob([JSON.stringify(incoming.file.tables)]).size + [...incoming.photoBlobs.values()].reduce((n, b) => n + b.size, 0)
+      const need = new Blob([JSON.stringify(incoming.file.tables)]).size + [...incoming.photoBlobs.values(), ...incoming.musicBlobs.values()].reduce((n, b) => n + b.size, 0)
       if (est && est.quota - est.usage < need * 1.5) throw new Error(`设备存储空间可能不足（需要约 ${mb(need)}）`)
       const rows = rowsToWrite(incoming.file, incoming.local, incoming.plan, mode)
-      const n = await applyRestore(rows, mode, { present: presentTables(incoming.file), photoBlobs: incoming.photoBlobs })
+      const n = await applyRestore(rows, mode, { present: presentTables(incoming.file), photoBlobs: incoming.photoBlobs, musicBlobs: incoming.musicBlobs })
       setMsg({ ok: true, text: `恢复完成：写入 ${n} 条数据。` })
       setIncoming(null)
     } catch (e) {
@@ -127,8 +134,19 @@ export default function BackupPage() {
     <div className="h-dvh flex flex-col">
       <NavBar title="备份与恢复" back />
       <div className="flex-1 min-h-0 overflow-y-auto pb-14">
+        <StorageCard photoBytes={photoInfo.bytes} musicBytes={musicInfo.bytes} />
         <Card title="导出全部数据">
-          <p>包含角色与人设、世界、世界书、聊天记录、关系与记忆、表情包图片、主题与个人设置，以及相册、日记、便签、日历。导出为一个 .lingling 文件，可以保存到「文件」或发给自己。</p>
+          <p>包含角色与人设、世界、世界书、聊天记录、关系与记忆、表情包图片、主题与个人设置，相册、日记、便签、日历，以及音乐、计时记录、信件、礼物、塔罗记录。导出为一个 .lingling 文件，可以保存到「文件」或发给自己。</p>
+          {musicInfo.count > 0 && (
+            <label className="mt-2 flex items-start gap-2 text-[12.5px]">
+              <input type="checkbox" aria-label="包含音乐文件" checked={musicOn} onChange={(e) => setWithMusic(e.target.checked)} className="mt-1" />
+              <span>
+                包含音乐文件（{musicInfo.count} 首，约 {mb(musicInfo.bytes)}）
+                <span className="block text-[11.5px] text-[var(--c-text-3)]">音乐作为单独的文件打包进备份。不勾选时，歌曲和歌单都不放进备份，恢复时本机的音乐也不会被改动。</span>
+                {musicOn && musicInfo.bytes + photoInfo.bytes > LARGE_BACKUP_BYTES && <span className="block text-[11.5px] text-[var(--c-danger)]">文件较多，生成和恢复时 iPhone 可能内存不足。</span>}
+              </span>
+            </label>
+          )}
           <label className="mt-2 flex items-start gap-2 text-[12.5px]">
             <input type="checkbox" checked={withPhotos} onChange={(e) => setWithPhotos(e.target.checked)} className="mt-1" />
             <span>
@@ -167,7 +185,7 @@ export default function BackupPage() {
         {ready && (
           <Card title="备份已生成">
             <div>
-              {ready.name}（{mb(ready.size)}{ready.zip ? `，含 ${ready.photos} 张照片原图` : ''}）
+              {ready.name}（{mb(ready.size)}{ready.photos ? `，含 ${ready.photos} 张照片原图` : ''}{ready.music ? `，含 ${ready.music} 首音乐文件` : ''}）
             </div>
             <div className="mt-1 text-[11.5px] text-[var(--c-text-3)]">{summarize(ready.file).map((s) => `${TABLE_LABEL[s.table]} ${s.count}`).join(' · ')}</div>
             {!ready.file.includesSecrets && <div className="mt-1 text-[11.5px] text-[var(--c-text-3)]">不含 API Key 和代理口令。</div>}
@@ -198,6 +216,7 @@ export default function BackupPage() {
               <div className="text-[12.5px]">
                 {incoming.file.scope === 'character' ? `角色备份「${incoming.file.characterName}」` : '全部数据备份'}，导出于 {new Date(incoming.file.exportedAt).toLocaleString()}
                 {incoming.photoBlobs.size > 0 && `，含 ${incoming.photoBlobs.size} 张照片原图`}
+                {incoming.musicBlobs.size > 0 && `，含 ${incoming.musicBlobs.size} 首音乐文件`}
               </div>
               <div className="mt-1.5 rounded-[12px] bg-white/40 px-3 py-2 text-[12px]">
                 {incoming.plan.tables.map((t) => (
@@ -249,7 +268,7 @@ export default function BackupPage() {
           confirmText={mode === 'replace' ? '清空并恢复' : '恢复'}
           message={
             mode === 'replace'
-              ? `本机这些类别会被清空，换成备份中的内容：${presentTables(incoming.file).map((t) => TABLE_LABEL[t]).join('、')}${presentTables(incoming.file).includes('photos') ? '（包括照片原图）' : ''}。备份里没有的类别不受影响。建议先在上面「生成全部数据备份」保存一份当前数据。`
+              ? `本机这些类别会被清空，换成备份中的内容：${presentTables(incoming.file).map((t) => TABLE_LABEL[t]).join('、')}${presentTables(incoming.file).includes('photos') ? '（包括照片原图）' : ''}${presentTables(incoming.file).includes('tracks') ? '（包括音乐文件）' : ''}。备份里没有的类别不受影响。建议先在上面「生成全部数据备份」保存一份当前数据。`
               : mode === 'merge-overwrite'
                 ? `将新增 ${totals?.added ?? 0} 条，并用备份覆盖 ${totals?.conflicts ?? 0} 条不同的数据。`
                 : `将新增 ${totals?.added ?? 0} 条数据，本机已有的内容不会被改动。`
@@ -259,5 +278,25 @@ export default function BackupPage() {
         />
       )}
     </div>
+  )
+}
+
+/** 存储占用：照片与音乐是大头；浏览器给的可用空间（Safari 可能在空间紧张时清理网站数据，请定期备份） */
+function StorageCard({ photoBytes, musicBytes }: { photoBytes: number; musicBytes: number }) {
+  const [est, setEst] = useState<{ usage: number; quota: number } | null>(null)
+  useEffect(() => {
+    void navigator.storage?.estimate?.().then((e) => e.quota && setEst({ usage: e.usage ?? 0, quota: e.quota }), () => {})
+  }, [photoBytes, musicBytes])
+  const pct = est ? Math.min(100, (est.usage / est.quota) * 100) : 0
+  return (
+    <Card title="存储占用">
+      <div className="storage-card grid grid-cols-2 gap-y-0.5 text-[12.5px]">
+        <span>相册照片</span><span>{mb(photoBytes)}</span>
+        <span>音乐文件</span><span>{mb(musicBytes)}</span>
+        {est && (<><span>聆聆共使用</span><span>{mb(est.usage)}（可用约 {mb(est.quota)}）</span></>)}
+      </div>
+      {est && <div className="mt-1.5 h-[4px] rounded-full bg-[rgba(150,175,205,0.3)]"><div className={`h-full rounded-full ${pct > 80 ? 'bg-[var(--c-danger)]' : 'bg-[#7f9cc4]'}`} style={{ width: `${pct}%` }} /></div>}
+      <p className="mt-1.5 text-[11.5px] text-[var(--c-text-3)]">所有数据都只在这台设备的浏览器里。空间紧张时 Safari 可能清理网站数据，请定期导出备份。</p>
+    </Card>
   )
 }

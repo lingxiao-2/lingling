@@ -38,6 +38,13 @@ export const TABLE_KEYS = {
   diaries: 'id',
   notes: 'id',
   events: 'id',
+  // 第八阶段
+  tracks: 'id',
+  playlists: 'id',
+  timers: 'id',
+  letters: 'id',
+  giftRecords: 'id',
+  tarotReadings: 'id',
 } as const
 
 export type TableName = keyof typeof TABLE_KEYS
@@ -65,6 +72,12 @@ export const TABLE_LABEL: Record<TableName, string> = {
   diaries: '日记',
   notes: '便签',
   events: '日程',
+  tracks: '音乐',
+  playlists: '歌单',
+  timers: '计时记录',
+  letters: '信件',
+  giftRecords: '礼物记录',
+  tarotReadings: '塔罗记录',
 }
 
 export interface BackupFile {
@@ -80,6 +93,8 @@ export interface BackupFile {
   tables: Dump
   /** v2：随备份一起保存的照片原图文件（ZIP 中 photos/ 目录下）；没有时表示备份不含照片原图 */
   photoFiles?: { id: string; path: string; bytes: number; mime: string }[]
+  /** 随备份一起保存的音乐文件（ZIP 中 music/ 目录下）；没有时表示备份不含音乐 */
+  musicFiles?: { id: string; path: string; bytes: number; mime: string }[]
 }
 
 export class BackupError extends Error {}
@@ -99,11 +114,13 @@ export function stripSecrets(settings: Row[]): Row[] {
   })
 }
 
-export function buildBackup(dump: Dump, opts: { schemaVersion: number; includeSecrets?: boolean; includePhotos?: boolean; now?: number }): BackupFile {
+export function buildBackup(dump: Dump, opts: { schemaVersion: number; includeSecrets?: boolean; includePhotos?: boolean; includeMusic?: boolean; now?: number }): BackupFile {
   const tables: Dump = {}
   for (const t of TABLES) {
     // 不含照片的备份：照片信息也不放进去（只有信息没有原图的照片会让人误以为照片还在）
     if (t === 'photos' && opts.includePhotos === false) continue
+    // 不含音乐的备份：歌曲信息和歌单也不放进去（恢复时本机的音乐不会被动到）
+    if ((t === 'tracks' || t === 'playlists') && opts.includeMusic === false) continue
     const rows = dump[t] ?? []
     // 全部数据备份也记下空表：这样「替换」恢复时，备份里明确为空的表会被清空，备份里根本没有的表（例如不含照片）不会被动到
     if (!rows.length) {
@@ -153,6 +170,9 @@ export function pickCharacter(dump: Dump, characterId: string, opts: { schemaVer
       stickerAnalyses: (dump.stickerAnalyses ?? []).filter((a) => hashes.has(a.hash)),
       // 与这个角色关联的纪念日 / 生日
       events: (dump.events ?? []).filter((e) => e.characterId === characterId),
+      // 与这个角色之间的信件和礼物（只包括这个角色的）
+      letters: (dump.letters ?? []).filter((l) => l.characterId === characterId),
+      giftRecords: (dump.giftRecords ?? []).filter((g) => g.characterId === characterId),
     },
   }
 }
