@@ -73,7 +73,9 @@ async function transition(id: string, from: ShortcutRunStatus[], patch: Partial<
 const defaultOpener = (url: string) => {
   const hook = (globalThis as { __LINGLING_TEST_OPEN__?: (u: string) => void }).__LINGLING_TEST_OPEN__
   if (typeof hook === 'function') return hook(url)
-  window.location.href = url
+  // https 网址在新页面打开（不离开聆聆）；其他（shortcuts:// 等）交给系统打开对应的 App
+  if (/^https:/i.test(url)) window.open(url, '_blank', 'noopener')
+  else window.location.href = url
 }
 let opener: (url: string) => void = defaultOpener
 /** 仅供测试：替换打开链接的方式 */

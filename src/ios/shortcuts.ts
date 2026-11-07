@@ -26,11 +26,10 @@ export const SHORTCUTS_KEY = 'ios-shortcuts'
 export const LIMITS = { name: 60, description: 120, input: 1500 }
 
 /** 推荐的快捷指令名称（照着「连接真实 iPhone」中的步骤创建） */
-export const RECOMMENDED: Record<Exclude<ShortcutPurpose, 'custom'>, string> = {
+export const RECOMMENDED: Record<'test' | 'reminder' | 'calendar', string> = {
   test: '聆聆测试',
   reminder: '聆聆提醒事项',
   calendar: '聆聆日历',
-  open_app: '聆聆打开应用',
 }
 
 /** 去掉控制字符（保留换行与制表符），限制长度；不合法时返回原因 */
@@ -89,7 +88,7 @@ export async function removeShortcut(id: string): Promise<void> {
   await writeShortcuts((await listShortcuts()).filter((s) => s.id !== id))
 }
 
-export async function shortcutFor(purpose: Exclude<ShortcutPurpose, 'custom'>): Promise<RegisteredShortcut | undefined> {
+export async function shortcutFor(purpose: 'test' | 'reminder' | 'calendar'): Promise<RegisteredShortcut | undefined> {
   return (await listShortcuts()).find((s) => s.purpose === purpose)
 }
 
