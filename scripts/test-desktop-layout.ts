@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { DB_SCHEMA_VERSION } from '../src/db/schema'
 import { db } from '../src/db/db'
 import { createCharacter, getOrCreateSingleConversation, sendUserMessage } from '../src/db/repo'
-import { defaultLayout, GRID, moveItem, setPage, type DesktopItem, type DesktopLayout } from '../src/desktop/layout'
+import { defaultLayout, GRID, moveItem, setPage, type DesktopItem, type DesktopLayout, LAYOUT_VERSION } from '../src/desktop/layout'
 import { LAYOUT_KEY, loadLayout, resetLayout, saveLayout, savePage } from '../src/desktop/layoutStore'
 
 const ids = (items: DesktopItem[]) => items.map((x) => (x.kind === 'app' ? x.app : x.id))
@@ -75,14 +75,14 @@ test('第一次进入生成默认布局并保存；之后不会被默认布局�
   const again = await loadLayout()
   assert.equal(ids(again.pages[2])[0], 'memory')
   assert.equal(again.page, 2)
-  assert.equal(again.version, 2)
+  assert.equal(again.version, LAYOUT_VERSION)
 })
 
 test('保存的数据损坏或来自旧版本：自动修复（补回缺失应用），损坏时退回默认；不影响其他设置', async () => {
   await db.settings.put({ key: 'profile', value: { nickname: '小雪', signature: '' } })
   await db.settings.put({ key: LAYOUT_KEY, value: '{坏掉的数据' })
   assert.deepEqual(await loadLayout(), defaultLayout())
-  await db.settings.put({ key: LAYOUT_KEY, value: { version: 2, pages: [[{ kind: 'app', app: 'tarot' }], [], []], dock: ['me'], page: 1 } })
+  await db.settings.put({ key: LAYOUT_KEY, value: { version: LAYOUT_VERSION, pages: [[{ kind: 'app', app: 'tarot' }], [], []], dock: ['me'], page: 1 } })
   const fixed = await loadLayout()
   assert.equal(ids(fixed.pages[0])[0], 'tarot')
   assert.deepEqual(fixed.dock, ['me'])

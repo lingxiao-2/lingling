@@ -207,6 +207,7 @@ export default function DesktopPage() {
       return
     }
     if (it.widget === 'clock') nav(appHref('clock'))
+    else if (it.widget === 'weather') nav(appHref('weather'))
     else if (it.widget === 'music') nav(appHref('music'))
     else if (it.widget === 'note') {
       // 打开指定的那张便签；没有指定或已删除时，到便签应用里写一张或选一张
