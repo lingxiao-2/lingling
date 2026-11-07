@@ -11,7 +11,7 @@ import { wireName } from '../services/ai/openai'
 import { schemaProblem, toJsonSchema, type ObjectSchema } from './schema'
 
 /** 角色可以被授予的工具权限（AI 工具权限页逐个角色管理，默认全部关闭） */
-export const TOOL_PERMISSIONS = ['calendar_read', 'calendar_write', 'notes_read', 'notes_write', 'diary_read', 'album_meta', 'image_read', 'memory_propose'] as const
+export const TOOL_PERMISSIONS = ['calendar_read', 'calendar_write', 'notes_read', 'notes_write', 'diary_read', 'album_meta', 'image_read', 'memory_propose', 'ios_reminder', 'ios_calendar', 'ios_open_app', 'ios_shortcut'] as const
 export type ToolPermission = (typeof TOOL_PERMISSIONS)[number]
 
 export type ToolErrorCode =
@@ -47,6 +47,8 @@ export interface ToolPreview {
   lines: string[]
   /** 危险操作（删除）用红色按钮 */
   danger?: boolean
+  /** 真实 iPhone 操作：确认按钮在点按中直接打开这个链接（iOS 只允许用户点按直接打开其他 App） */
+  launch?: { runId: string; url: string }
 }
 
 export interface ToolDefinition {
@@ -64,6 +66,8 @@ export interface ToolDefinition {
   timeoutMs?: number
   /** 结果序列化后的最大字数 */
   maxResultChars?: number
+  /** 一次回复中最多执行几次（例如真实 iPhone 操作每次都要离开聆聆，只允许 1 次） */
+  maxPerReply?: number
   /** 确认卡片上显示的内容（confirm 为 true 的工具必须提供） */
   /** 「每次询问」时给你看这次要读取的范围（例如「11月7日 的日程」），不读取任何数据 */
   describe?: (args: Record<string, unknown>) => string[]

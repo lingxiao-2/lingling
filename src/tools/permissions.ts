@@ -8,6 +8,7 @@
  */
 import { db } from '../db/db'
 import { TOOL_PERMISSIONS, type ToolPermission } from './registry'
+import { rejectPendingFor } from './confirm'
 
 export type PermissionMode = 'off' | 'ask' | 'always' | 'deny'
 export const PERMISSIONS_KEY = 'tool-permissions'
@@ -25,6 +26,10 @@ export const PERMISSION_INFO: Record<ToolPermission, { label: string; hint: stri
   diary_read: { label: '日记读取', hint: '只读，只包括逐篇勾选了「允许 AI 读取」的日记；不会写入长期记忆' },
   album_meta: { label: '相册元数据', hint: '照片名称、备注、日期和相册，不包含图片本身' },
   image_read: { label: '图片读取', hint: '把某张照片交给支持识图的模型；每一次都要你先确认，不会自动上传', write: true },
+  ios_reminder: { label: 'iPhone 提醒事项', hint: '通过你登记的快捷指令在 iPhone 上创建提醒事项；每一次都要你确认', write: true },
+  ios_calendar: { label: 'iPhone 系统日历', hint: '通过快捷指令在 iPhone 系统日历中创建事件（不是聆聆的日历）；每一次都要你确认', write: true },
+  ios_open_app: { label: '打开 iPhone 应用', hint: '打开提醒事项、日历、地图等自带应用，或在 Safari 打开网址；每一次都要你确认', write: true },
+  ios_shortcut: { label: '运行自定义快捷指令', hint: '只能运行你登记并允许 AI 使用的快捷指令；每一次都要你确认', write: true },
   memory_propose: { label: '记忆（查看与提议）', hint: '查看这个角色自己的记忆；提出新的记忆只进入「待确认」，必须有你说过的原话' },
 }
 
@@ -60,6 +65,7 @@ export async function getMode(characterId: string, permission: ToolPermission): 
 /** 只有「AI 工具权限」页调用 */
 export async function setMode(characterId: string, permission: ToolPermission, mode: PermissionMode): Promise<void> {
   if (!TOOL_PERMISSIONS.includes(permission) || !MODES.includes(mode)) throw new Error('权限设置不合法')
+  if (mode === 'off' || mode === 'deny') rejectPendingFor(characterId)
   await db.transaction('rw', db.settings, async () => {
     const s = await read()
     const mine = { ...(s.characters[characterId] ?? {}) }
@@ -72,6 +78,7 @@ export async function setMode(characterId: string, permission: ToolPermission, m
 
 /** 一键关闭某个角色的全部权限 */
 export async function revokeAll(characterId: string): Promise<void> {
+  rejectPendingFor(characterId)
   await db.transaction('rw', db.settings, async () => {
     const s = await read()
     delete s.characters[characterId]

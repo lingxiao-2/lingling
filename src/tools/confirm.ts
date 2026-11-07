@@ -15,6 +15,10 @@ export interface ConfirmRequest {
   lines: string[]
   danger?: boolean
   confirmText: string
+  /** 哪个角色提出的（撤销权限时立即拒绝它的等待中请求） */
+  characterId?: string
+  /** 真实 iPhone 操作：确认按钮在点按中直接打开这个链接 */
+  launch?: { runId: string; url: string }
 }
 
 const pending = new Map<string, { req: ConfirmRequest; resolve: (ok: boolean) => void }>()
@@ -59,4 +63,9 @@ export function usePendingConfirmation(conversationId: string): ConfirmRequest |
     () => snapshot,
   )
   return list.find((r) => r.conversationId === conversationId)
+}
+
+/** 撤销某个角色的权限时：它正在等待确认的请求立即按拒绝处理（卡片消失，不会打开任何东西） */
+export function rejectPendingFor(characterId: string) {
+  for (const p of [...pending.values()]) if (p.req.characterId === characterId) p.resolve(false)
 }

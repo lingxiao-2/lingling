@@ -12,10 +12,13 @@ import { getMode, getPermissions } from './permissions'
 import { toolRegistry, type ToolDefinition } from './registry'
 import { registerLifeTools } from './lifeTools'
 import { registerMemoryTools } from './memoryTools'
+import { registerIosTools } from './iosTools'
+import { cancelRun } from '../ios/runs'
 
 // 生活应用工具：只有在角色被授予对应权限后才会提供给模型
 registerLifeTools(toolRegistry)
 registerMemoryTools(toolRegistry)
+registerIosTools(toolRegistry)
 
 export function toolCallingSupported(config: AIConfig): boolean {
   return config.service !== 'lingling'
@@ -38,18 +41,24 @@ export const authorizeTool: Authorizer = async (def, args, ctx) => {
   let title = `${ctx.characterName}想${def.label}`
   let lines: string[] = def.describe?.(args) ?? []
   let danger = false
+  let launch: { runId: string; url: string } | undefined
   if (def.preview) {
     const p = await def.preview(args, ctx)
     if ('error' in p) return { allowed: false, confirmation: 'not_required', reason: p.error, code: /识图/.test(p.error) ? 'unavailable' : /没有找到/.test(p.error) ? 'not_found' : 'invalid' }
     title = p.title
     lines = p.lines
     danger = !!p.danger
+    launch = p.launch
   }
   const ok = await requestConfirmation(
-    { id: uid('cfm'), conversationId: ctx.conversationId ?? '', characterName: ctx.characterName, tool: def.name, kind: def.confirm ? 'write' : 'read', title, lines, danger, confirmText: def.confirm ? (danger ? '确认删除' : '确认') : '允许本次' },
+    { id: uid('cfm'), conversationId: ctx.conversationId ?? '', characterId: ctx.characterId, characterName: ctx.characterName, tool: def.name, kind: def.confirm ? 'write' : 'read', title, lines, danger, launch, confirmText: launch ? '确认并打开' : def.confirm ? (danger ? '确认删除' : '确认') : '允许本次' },
     ctx.signal,
   )
-  if (!ok) return { allowed: false, confirmation: 'user_rejected', reason: ctx.signal.aborted ? '已停止' : '用户拒绝了这次操作' }
+  if (!ok) {
+    // 真实 iPhone 操作：取消这次准备好的运行（没有打开任何东西）
+    if (launch) await cancelRun(launch.runId)
+    return { allowed: false, confirmation: 'user_rejected', reason: ctx.signal.aborted ? '已停止' : '用户拒绝了这次操作' }
+  }
   // 等待确认期间权限被撤销：不执行
   if (def.permission) {
     const now = await getMode(ctx.characterId, def.permission)

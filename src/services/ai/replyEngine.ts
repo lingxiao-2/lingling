@@ -17,7 +17,7 @@ import { loadContextSources, loadMemories } from './contextInput'
 import { maybeAutoExtract, saveRememberRequests } from './autoMemory'
 import { capParts, MAX_PARTS, parseReply, type ReplyPart } from './messageFormat'
 import { AIError, chatTurn } from './openai'
-import { runToolLoop, TOOL_RULES } from '../../tools/loop'
+import { runToolLoop, toolRules } from '../../tools/loop'
 import { authorizeTool, toolsForCharacter } from '../../tools/runtime'
 import { toolRegistry } from '../../tools/registry'
 import type { ChatTurn, ContentPart } from './provider'
@@ -274,7 +274,7 @@ export async function runReply(convId: string, regenerateFamily?: string): Promi
         raw = (await chatTurn({ config, messages: ctx.messages, signal: ctrl.signal, deviceId, onDelta })).content
       } else {
         const messages = [...ctx.messages]
-        messages.splice(1, 0, { role: 'system', content: TOOL_RULES })
+        messages.splice(1, 0, { role: 'system', content: toolRules() })
         await runToolLoop({
           messages,
           tools,
