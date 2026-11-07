@@ -108,8 +108,9 @@ export default function CharacterProfilePage() {
           </button>
         </Section>
 
-        <Section title="信件">
+        <Section title="信件与礼物">
           <LetterEntry characterId={id} />
+          <GiftEntry characterId={id} />
         </Section>
 
         <Section title="朋友圈">
@@ -262,6 +263,21 @@ function LetterEntry({ characterId }: { characterId: string }) {
         {!!n?.unread && <span className="ml-2 text-[12px] text-[var(--c-accent-strong)]">{n.unread} 封未读</span>}
       </span>
       <span className="text-[12px] text-[var(--c-text-3)]">打开信箱</span>
+    </button>
+  )
+}
+
+/** 和这个角色之间的礼物（只统计这个角色的） */
+function GiftEntry({ characterId }: { characterId: string }) {
+  const nav = useNavigate()
+  const n = useLiveQuery(async () => {
+    const list = (await db.giftRecords.where('characterId').equals(characterId).toArray()).filter((g) => !g.deletedAt)
+    return { sent: list.filter((g) => g.direction === 'to_character').length, received: list.filter((g) => g.direction === 'from_character').length }
+  }, [characterId])
+  return (
+    <button onClick={() => nav(`/gifts?character=${characterId}`)} className="press w-full flex items-center justify-between px-4 py-3 text-left hairline-t">
+      <span className="text-[14px]">礼物 · 送出 {n?.sent ?? 0} · 收到 {n?.received ?? 0}</span>
+      <span className="text-[12px] text-[var(--c-text-3)]">打开礼物</span>
     </button>
   )
 }
