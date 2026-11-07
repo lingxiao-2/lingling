@@ -60,7 +60,7 @@ export const APPS: Record<AppId, DesktopApp> = {
   weather: { id: 'weather', name: '天气', en: 'Weather', icon: 'weather', route: '/weather' },
   mail: { id: 'mail', name: '信箱', en: 'Letters', icon: 'mail', route: '/mail' },
   gift: { id: 'gift', name: '礼物', en: 'Gifts', icon: 'gift', route: '/gifts' },
-  tarot: { id: 'tarot', name: '塔罗', en: 'Tarot', icon: 'tarot', route: null, plan: '抽一张牌，和角色聊聊。' },
+  tarot: { id: 'tarot', name: '塔罗', en: 'Tarot', icon: 'tarot', route: '/tarot' },
 }
 
 export const APP_IDS = Object.keys(APPS) as AppId[]

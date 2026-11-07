@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 
 /** 当前数据结构版本。修改表结构时递增，并在 db.ts 中补充 version(n).upgrade() 迁移。 */
-export const DB_SCHEMA_VERSION = 14
+export const DB_SCHEMA_VERSION = 15
 
 export const DEFAULT_WORLD_ID = 'world-default'
 
@@ -707,6 +707,23 @@ export interface GiftRecord {
   deletedAt?: number
 }
 
+/* ---------- 塔罗（第八阶段，v15） ---------- */
+export interface TarotReading {
+  id: string
+  spread: 'single' | 'three'
+  question: string
+  cards: { cardId: string; reversed: boolean; position: string }[]
+  theme: 'ice' | 'silver' | 'night'
+  /** AI 角色的解读（真实模型输出，你请求时才有） */
+  interpretation?: string
+  interpreterId?: string
+  model?: string
+  /** 你同意后保存到的日记 */
+  diaryId?: string
+  createdAt: number
+  deletedAt?: number
+}
+
 export class LinglingDB extends Dexie {
   characters!: Table<Character, string>
   conversations!: Table<Conversation, string>
@@ -736,6 +753,7 @@ export class LinglingDB extends Dexie {
   timers!: Table<ClockTimer, string>
   letters!: Table<Letter, string>
   giftRecords!: Table<GiftRecord, string>
+  tarotReadings!: Table<TarotReading, string>
 
   constructor() {
     super('lingling-ai')
@@ -825,6 +843,10 @@ export class LinglingDB extends Dexie {
     // v14：只新增礼物记录表
     this.version(14).stores({
       giftRecords: 'id, characterId, direction, createdAt',
+    })
+    // v15：只新增塔罗记录表
+    this.version(15).stores({
+      tarotReadings: 'id, createdAt',
     })
   }
 }

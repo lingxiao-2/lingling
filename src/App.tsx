@@ -31,6 +31,8 @@ import LetterPage from './pages/mail/LetterPage'
 import GiftsPage from './pages/gifts/GiftsPage'
 import SendGiftPage from './pages/gifts/SendGiftPage'
 import GiftRecordPage from './pages/gifts/GiftRecordPage'
+import TarotPage from './pages/tarot/TarotPage'
+import ReadingPage from './pages/tarot/ReadingPage'
 import PlaylistPage from './pages/music/PlaylistPage'
 import NowPlayingPage from './pages/music/NowPlayingPage'
 import ContactsPage from './pages/ContactsPage'
@@ -121,6 +123,8 @@ export default function App() {
       <Route path="gifts" element={<GiftsPage />} />
       <Route path="gifts/send" element={<SendGiftPage />} />
       <Route path="gifts/:id" element={<GiftRecordPage />} />
+      <Route path="tarot" element={<TarotPage />} />
+      <Route path="tarot/:id" element={<ReadingPage />} />
       <Route path="music/playlist/:id" element={<PlaylistPage />} />
       <Route path="music/now" element={<NowPlayingPage />} />
       <Route path="me/iphone/run/:id" element={<RunPage />} />

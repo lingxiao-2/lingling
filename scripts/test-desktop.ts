@@ -31,8 +31,8 @@ test('应用清单：包含指令要求的全部入口；已完成的应用都�
       assert.ok(APPS[id].plan, `待开发应用「${APPS[id].name}」需要说明计划`)
     }
   }
-  // 尚未开发的应用（第五阶段起相册、日记、便签、日历陆续上线）
-  for (const id of ['tarot'] as const) assert.equal(APPS[id].route, null)
+  // 第八阶段起音乐、时钟、天气、信箱、礼物、塔罗都已上线：所有应用都有真实页面
+  for (const id of ['music', 'clock', 'weather', 'mail', 'gift', 'tarot'] as const) assert.ok(APPS[id].route, `${id} 应该有真实页面`)
 })
 
 test('旧路由保留：联系人、动态、我的、聊天、角色、记忆、世界、世界书、设置、备份；消息改为 /messages，首页是桌面', () => {
