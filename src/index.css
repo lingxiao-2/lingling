@@ -733,3 +733,21 @@ input[type="checkbox"],
 input[type="radio"] {
   accent-color: #6f90b8;
 }
+
+/* ---------- 音乐（第八阶段） ---------- */
+.now-playing {
+  background:
+    radial-gradient(120% 70% at 50% 0%, rgba(255, 255, 255, 0.92), rgba(232, 240, 250, 0.96) 55%, rgba(214, 227, 243, 0.98)),
+    var(--c-bg, #eef3f9);
+}
+.music-cover-empty {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.85), rgba(214, 226, 242, 0.75));
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+.np-disc { border-radius: 9999px; padding: 6px; background: linear-gradient(145deg, rgba(255,255,255,0.95), rgba(200,215,235,0.6)); }
+.np-spin { animation: np-spin 24s linear infinite; }
+@keyframes np-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .np-spin { animation: none; } }
+.np-range { -webkit-appearance: none; appearance: none; height: 22px; background: transparent; }
+.np-range::-webkit-slider-runnable-track { height: 3px; border-radius: 3px; background: rgba(120, 145, 180, 0.35); }
+.np-range::-webkit-slider-thumb { -webkit-appearance: none; margin-top: -6px; height: 15px; width: 15px; border-radius: 9999px; background: #fff; border: 1px solid rgba(120, 145, 180, 0.5); box-shadow: 0 2px 6px rgba(60, 90, 130, 0.25); }

@@ -1,7 +1,7 @@
 /**
  * 桌面小组件（只负责外观与自身数据；点按、拖动由桌面统一处理）：
  *  - 时间日期：衬线数字，每分钟整点自动更新
- *  - 音乐：播放器外观；目前没有可播放的音乐资源，明确显示「未连接」，没有任何播放按钮
+ *  - 音乐：显示音乐 App 的真实播放状态（同一个播放器）
  *  - 便签：显示你在本机保存的一段便签
  *  - 角色：显示指定角色的头像与名字，点按进入聊天；不会调用 AI、不消耗 API
  */
@@ -13,6 +13,7 @@ import { db } from '../db/db'
 import type { DesktopItem } from './layout'
 import { useDesktopNote } from './layoutStore'
 import { colorOf, previewLines } from '../life/notes'
+import { usePlayer } from '../music/player'
 
 type Widget = Extract<DesktopItem, { kind: 'widget' }>
 
@@ -86,20 +87,33 @@ function ClockWidget() {
   )
 }
 
-/** 音乐：横向的精致播放器外观；没有可播放的资源时明确写「未连接」，不放任何播放按钮 */
+/**
+ * 音乐：显示全局播放器的真实状态（与音乐 App 同步）。没有歌曲时说明怎么导入；
+ * 点按由桌面统一处理（进入音乐 App），这里不放按钮，避免和拖动编辑冲突。
+ */
 function MusicWidget() {
+  const p = usePlayer()
+  const count = useLiveQuery(() => db.tracks.count(), [], 0)
+  const t = p.track
+  const pct = t && p.duration ? Math.min(100, (p.position / p.duration) * 100) : 0
   return (
-    <Shell label="音乐（未连接）" className="desk-glass flex items-center gap-3.5 px-3.5">
-      <span className="desk-vinyl shrink-0" aria-hidden>
-        <Icon name="music" size="sm" stroke="thin" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block desk-serif italic text-[15px] leading-tight text-[#3f5674]">Not connected</span>
-        <span className="mt-0.5 block text-[12.5px] text-[#4a5f7b]">音乐未连接</span>
-        <span className="mt-1.5 flex items-center gap-2 text-[10.5px] text-[#8496ae]">
-          <span className="h-[5px] w-[5px] rounded-full border border-[#9fb3cc]" aria-hidden />
-          还没有可播放的音乐
+    <Shell label={t ? `音乐：${t.title}${p.playing ? '（正在播放）' : '（已暂停）'}` : '音乐'} className="desk-glass flex items-center gap-3.5 px-3.5">
+      {t?.cover ? (
+        <img src={t.cover} alt="" className={`desk-vinyl shrink-0 object-cover ${p.playing ? 'np-spin' : ''}`} />
+      ) : (
+        <span className={`desk-vinyl shrink-0 ${p.playing ? 'np-spin' : ''}`} aria-hidden>
+          <Icon name="music" size="sm" stroke="thin" />
         </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block desk-serif italic text-[13px] leading-tight text-[#6f88a8]">{t ? (p.playing ? 'Now playing' : 'Paused') : 'Music'}</span>
+        <span className="mt-0.5 block truncate text-[13px] text-[#3f5674]">{t ? t.title : count ? `${count} 首歌曲` : '还没有音乐'}</span>
+        <span className="block truncate text-[10.5px] text-[#8496ae]">{t ? t.artist || '未知歌手' : count ? '点按打开音乐' : '点按，从「文件」导入你的音乐'}</span>
+        {t && (
+          <span className="mt-1.5 block h-[2px] rounded-full bg-[rgba(150,175,205,0.35)]" aria-hidden>
+            <span className="block h-full rounded-full bg-[#7f9cc4]" style={{ width: `${pct}%` }} />
+          </span>
+        )}
       </span>
     </Shell>
   )

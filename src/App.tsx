@@ -21,6 +21,9 @@ import EventEditorPage from './pages/calendar/EventEditorPage'
 import AiToolsPage, { AiToolsCharacterPage } from './pages/AiToolsPage'
 import IphonePage, { RunPage } from './pages/iphone/IphonePage'
 import SharePage from './pages/SharePage'
+import MusicPage from './pages/music/MusicPage'
+import PlaylistPage from './pages/music/PlaylistPage'
+import NowPlayingPage from './pages/music/NowPlayingPage'
 import ContactsPage from './pages/ContactsPage'
 import MomentsPage from './pages/MomentsPage'
 import MomentComposePage from './pages/MomentComposePage'
@@ -99,6 +102,9 @@ export default function App() {
       <Route path="me/ai-tools" element={<AiToolsPage />} />
       <Route path="me/iphone" element={<IphonePage />} />
       <Route path="share" element={<SharePage />} />
+      <Route path="music" element={<MusicPage />} />
+      <Route path="music/playlist/:id" element={<PlaylistPage />} />
+      <Route path="music/now" element={<NowPlayingPage />} />
       <Route path="me/iphone/run/:id" element={<RunPage />} />
       <Route path="me/ai-tools/:charId" element={<AiToolsCharacterPage />} />
       {/* 第五阶段的全局开关页已由逐个角色的「AI 工具权限」取代；旧设置原样保留，不再使用 */}

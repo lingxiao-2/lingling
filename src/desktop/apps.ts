@@ -55,7 +55,7 @@ export const APPS: Record<AppId, DesktopApp> = {
   diary: { id: 'diary', name: '日记', en: 'Diary', icon: 'diary', route: '/diary' },
   notes: { id: 'notes', name: '便签', en: 'Notes', icon: 'note', route: '/notes' },
   calendar: { id: 'calendar', name: '日历', en: 'Calendar', icon: 'calendar', route: '/calendar' },
-  music: { id: 'music', name: '音乐', en: 'Music', icon: 'music', route: null, plan: '播放你自己导入的音乐。' },
+  music: { id: 'music', name: '音乐', en: 'Music', icon: 'music', route: '/music' },
   clock: { id: 'clock', name: '时钟', en: 'Clock', icon: 'clock', route: null, plan: '世界时钟与闹钟。' },
   weather: { id: 'weather', name: '天气', en: 'Weather', icon: 'weather', route: null, plan: '查看天气（需要你同意后才会联网获取）。' },
   mail: { id: 'mail', name: '信箱', en: 'Letters', icon: 'mail', route: null, plan: '和角色互相写信。' },
