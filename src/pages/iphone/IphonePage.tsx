@@ -11,7 +11,9 @@ import IphoneActions from './IphoneActions'
 import { Icon } from '../../theme/icons'
 import { db } from '../../db/db'
 import { detectEnvironment } from '../../ios/env'
-import { RECIPES } from '../../ios/recipes'
+import { RECIPES, shareRecipes } from '../../ios/recipes'
+import { shareUrlPrefix } from '../../ios/share'
+import { callbackBase } from '../../ios/shortcuts'
 import { clearRuns, createRun, STATUS_LABEL } from '../../ios/runs'
 import { LIMITS, listShortcuts, registerShortcut, removeShortcut, SHORTCUTS_KEY, updateShortcut, type RegisteredShortcut, type ShortcutPurpose } from '../../ios/shortcuts'
 
@@ -167,7 +169,18 @@ export default function IphonePage() {
           {!!runs?.length && <button className="press mt-2 text-[12px] text-[var(--c-text-3)]" onClick={() => void clearRuns()}>清除已结束的记录</button>}
         </Section>
 
-        <Section n={8} title="角色权限">
+        <Section n={8} title="从 iPhone 分享到聆聆">
+          <p>网页不能直接出现在 iPhone 的分享菜单里。做一个快捷指令放进分享菜单，就能把文字、链接、图片交给聆聆；聆聆先显示预览，你决定之后才会保存，<b>不会自动发给 AI</b>。</p>
+          {shareRecipes((k) => shareUrlPrefix(callbackBase(), k)).map((r) => (
+            <details key={r.name} className="mt-2 rounded-[12px] bg-white/45 px-3 py-2">
+              <summary className="text-[13px] text-[var(--c-text)]">「{r.name}」· {r.title}</summary>
+              <p className="mt-1 text-[11.5px] text-[var(--c-text-3)]">{r.why}</p>
+              <ol className="mt-1 list-decimal pl-5 text-[12.5px] break-all">{r.steps.map((s) => <li key={s}>{s}</li>)}</ol>
+            </details>
+          ))}
+        </Section>
+
+        <Section n={9} title="角色权限">
           哪些角色可以在你确认后使用这些快捷指令，在「AI 工具权限」中逐个角色设置，默认全部关闭。
           <button className="press mt-2 flex items-center gap-1 text-[var(--c-accent-strong)]" onClick={() => nav('/me/ai-tools')}>前往 AI 工具权限 <Icon name="forward" size="xs" /></button>
         </Section>
