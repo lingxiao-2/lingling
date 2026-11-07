@@ -95,8 +95,11 @@ const current = (page) => page.evaluate(() => [...document.querySelectorAll('[ro
     const left = !page.url().endsWith('#/')
     check(left, `打开「${name}」→ ${page.url().split('#')[1]}`)
   }
+  await page.goto(BASE + '#/app/tarot')
+  check((await page.getByText('还在开发中').count()) === 1, '待开发应用如实说明，没有假按钮')
   await page.goto(BASE + '#/app/music')
-  check((await page.getByText('还在开发中').count()) === 1 && (await page.locator('button:has-text("播放")').count()) === 0, '待开发应用如实说明，没有假按钮')
+  await page.waitForTimeout(300)
+  check(/#\/music$/.test(page.url()), '已完成应用的旧待开发地址进入真实页面')
   if (shots) await page.screenshot({ path: `${shots}/coming-soon.png` })
 
   // 深链接与刷新
